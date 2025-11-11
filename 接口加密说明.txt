@@ -1,0 +1,27 @@
+t.wskey=cCN7F6cT6s29DEEskpOJT70xKYsfLwNgjVFVHI114ahrnZNy7rrlPZu0QGvJtT51
+加密的方法就一个，key是固定的
+getEncryptToken(e) {
+            var i = t.wskey
+              , s = CryptoJS.enc.Utf8.parse(i);
+            return CryptoJS.TripleDES.encrypt(e, s, {
+                mode: CryptoJS.mode.ECB,
+                padding: CryptoJS.pad.Pkcs7
+            }).toString();
+        }
+
+使用方法
+i为原始参数值：
+{
+    "cmd": 99,
+    "token": "990009254645456f95facf88e6449986",
+    "time": 1761618332320
+}
+
+token=getEncryptToken(JSON.stringify(i))
+
+
+最终发送值
+{
+    "cmd": 99,
+    "token": "Unuxz8nDdDdU92lPHjKqP7fVLmloPaj8328Xhv4ngkA+16EyX+JVRHJb8jGw0FO8qclpvxSQeGXwbe3WQ0a7dD0kRm9WUlYnqecCp1jwhR4="
+}

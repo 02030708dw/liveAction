@@ -1,0 +1,61 @@
+1.组装数据，先组装一个list，demo
+[10106, '251024B061078', 'NICK122PHP', 'CPRLc3Ui', '1', 'f4ZtAeVbulduZZ7sSYn/2snyZCNLAs48WZfk7fB7oWZagr0CeVh9IclAqXGbkSCwPogL13QPn3s=', 'a5b9bb714f2d44bf84fb0a5f833c5dde', 1]
+1.tableID,gameNo,playerName(自己的用户名)，t.random.slice(16)，this.limitId.toString()（为1）， t.encrypt(JSON.stringify(e))（{"player":100,"info":"{\\"roadType\\":8,\\"table\\":3}"}）,8cb824bab2ae416d832e65f542cce4b2,1
+其中的，player为闲家，banker6为庄家，roadType为cmd=43（大厅初始化信息）时，最开始的object参数里面的type
+ t.encrypt方法
+        static encrypt(e) {
+            var i = t.random
+              , s = CryptoJS.enc.Utf8.parse(i);
+            return CryptoJS.TripleDES.encrypt(e, s, {
+                mode: CryptoJS.mode.ECB,
+                padding: CryptoJS.pad.Pkcs7
+            }).toString();
+        }
+
+其中的t.random的值是：10086中在list的参数值里面的第一个值
+
+ list[0] = demo[4]; this.limitId.toString()（为1）
+ list[1] = md5(strKey); strKey = demo[0] + demo[1] + demo[2] + demo[3];（就是普通的md5加密）
+ list[2] = demo[5];
+
+最终组装数据：
+{
+    "cmd": 6,
+    "token": "8cb824bab2ae416d832e65f542cce4b2",
+    "tableId": 20103,
+    "gameNo": "251024B531083",
+    "list": [
+        "1",
+        "fd65a8094b117fe8a8c9edc451950ea2",
+        "LuKpzGPg6DF2eWceCxTbP8naSk7OmjD2YflxIurL8zy0NhC0A2K6aw3XNQMIweoVhueYPHIwdrE="
+    ],
+    "type": 1
+}
+
+加密数据：和其他cmd加密是一样的逻辑，就把 i 加密就行，i 就是cmd,token，t(时间戳)
+i为一下参数：
+{
+    "cmd": 6,
+    "token": "afcb8f03ea6a4bc4bef20d8a913d9c5b",
+    "time": 1761620029231
+}
+
+
+getEncryptToken(JSON.stringify(i));
+
+最终发送数据：
+{
+    "cmd": 6,
+    "token": "J75fqiW3vvOs6iyTRJGQW8hEc/aizF1Qix0m4Iq+mOjIUK41y8v1RO5gfSwqUPU2Ks4rhD60zVyjoPLciExKEsjvX7ZFhZ5cnaeqFTgk8QE=",
+    "gameNo": "251028B040751",
+    "tableId": 10104,
+    "type": 1,
+    "list": [
+        "1",
+        "ffe0b84ec790c1aca5572a8ac0139314",
+        "TCRanv1drBTV/vSocaHGsb1XL98CEh4YQuKpAngo/z5bJ/3xCSr/KYNt5Pr8UUjm44nHuL7MV/U="
+    ]
+}
+
+
+

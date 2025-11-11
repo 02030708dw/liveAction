@@ -1,0 +1,6 @@
+就是用了protobuf.js来把字节码重新组装成数据
+主要有几个数据模型
+总数据模型：VM86
+table:VM74
+lobbyPush：VM91
+virtual：VM61

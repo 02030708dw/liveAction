@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <title>DG==WS</title>
+  <style>
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: Consolas, monospace;
+      padding: 20px;
+    }
+
+    input,
+    button {
+      margin: 4px 4px 4px 0;
+      padding: 4px;
+      border-radius: 4px;
+      border: none;
+    }
+
+    textarea {
+      width: 100%;
+      height: 1000px;
+      background: #161b22;
+      color: #c9d1d9;
+    }
+
+    button {
+      background: #238636;
+      color: white;
+      cursor: pointer;
+    }
+
+    #log {
+      white-space: pre-wrap;
+      background: #161b22;
+      padding: 10px;
+      border-radius: 6px;
+      height: 1000px;
+      overflow: auto;
+    }
+
+    .row {
+      margin-bottom: 8px;
+    }
+
+    .muted {
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    code {
+      background: #161b22;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    .header {
+      grid-area: header;
+      background: #2b3544;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .game-tag {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #9b59b6;
+      font-size: 11px;
+    }
+
+    .table-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .header-right {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .header-right span strong {
+      color: #ffd166;
+      margin-right: 2px;
+    }
+
+    .road {
+      grid-area: road;
+      padding: 8px;
+      background: #11161f;
+    }
+
+    .road-title {
+      font-size: 12px;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #9ca3af;
+    }
+
+    .road-stats {
+      font-size: 11px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .road-stats span {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .dot-b,
+    .dot-p,
+    .dot-t {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot-b {
+      background: #e74c3c;
+    }
+
+    .dot-p {
+      background: #3498db;
+    }
+
+    .dot-t {
+      background: #2ecc71;
+    }
+
+    .road-grid {
+      margin-top: 4px;
+      background: #05070b;
+      border-radius: 4px;
+      padding: 4px;
+      display: grid;
+      gap: 2px;
+    }
+
+    .road-cell {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      box-sizing: border-box;
+    }
+
+    .road-cell.empty {
+      border: 1px solid rgba(55, 65, 81, 0.5);
+      background: transparent;
+    }
+
+    .road-cell.b {
+      background: #e74c3c;
+      border-color: #c0392b;
+    }
+
+    .road-cell.p {
+      background: #3498db;
+      border-color: #2980b9;
+    }
+
+    .road-cell.t {
+      background: #2ecc71;
+      border-color: #27ae60;
+    }
+
+    .road-cell.pair::after {
+      content: "•";
+      font-size: 12px;
+      color: #f1c40f;
+    }
+
+    .dealer {
+      grid-area: dealer;
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f1722;
+      border-left: 1px solid #374151;
+    }
+
+    .dealer-img-wrap {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      margin-bottom: 4px;
+    }
+
+    .dealer-img {
+      width: 96px;
+      height: 126px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #111827;
+      border: 1px solid #4b5563;
+    }
+
+    .dealer-name {
+      font-size: 12px;
+      margin-bottom: 4px;
+      text-align: center;
+    }
+
+    .status-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #1e3a8a;
+      color: #bfdbfe;
+    }
+
+    .status-pill--shuffle {
+      background: #92400e;
+      color: #fed7aa;
+    }
+
+    .status-pill--maintenance {
+      background: #7f1d1d;
+      color: #fecaca;
+    }
+
+    .footer {
+      grid-area: footer;
+      background: #11161f;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      border-top: 1px solid #1f2933;
+    }
+
+    .footer-left {
+      display: flex;
+      gap: 12px;
+    }
+
+    .footer-left span strong {
+      margin-right: 4px;
+      color: #fbbf24;
+    }
+
+    .enter-btn {
+      padding: 4px 12px;
+      border-radius: 16px;
+      border: none;
+      background: #22c55e;
+      color: #052e16;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .enter-btn:hover {
+      background: #16a34a;
+    }
+
+    .debug {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #9ca3af;
+      white-space: pre-wrap;
+      background: #020617;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #1f2937;
+    }
+
+    /* 桌台容器：使用 flex 布局 */
+    #dg-table-container {
+      display: flex;
+      flex-wrap: wrap;
+      /* 多行排列 */
+      gap: 16px;
+      /* 卡片之间的间距 */
+      align-items: flex-start;
+    }
+
+    .table-card {
+      width: 520px;
+      background: #1b222c;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 3fr 1.2fr;
+      grid-template-rows: auto auto 1fr;
+      grid-template-areas:
+        "header header"
+        "road dealer"
+        "footer footer";
+      margin-top: 10px;
+    }
+
+    .table-card {
+      /* flex 子项的宽度（3 列布局，留一点间隔）*/
+      flex: 0 0 calc(33.333% - 16px);
+      max-width: 520px;
+      /* 不超过原来大小 */
+      min-width: 320px;
+      /* 太窄就自动换行 */
+
+      background: #1b222c;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 3fr 1.2fr;
+      grid-template-rows: auto auto 1fr;
+      grid-template-areas:
+        "header header"
+        "road dealer"
+        "footer footer";
+      margin-top: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <section>
+    <h3>① 登录</h3>
+    <div class="row">
+      <label>用户名</label>
+      <input id="username" value="member19" />
+      <label>密码</label>
+      <input id="password" type="password" value="a123456" />
+      <button id="btnLogin">登录</button>
+    </div>
+    <div class="muted">
+      保存到 localStorage 键：<code>nakiph_auth</code>
+    </div>
+    <pre id="loginOut">（等待）</pre>
+  </section>
+
+  <section>
+    <h3>② 进入游戏（使用已保存的 Authorization）</h3>
+    <div class="row">
+      <label>code</label><input id="eg_code" value="1" />
+      <label>gamerCode</label><input id="eg_gamer" value="DG" />
+      <label>providerCode</label><input id="eg_provider" value="cq9" />
+      <label>live</label><input id="eg_live" value="true" />
+      <label>html</label><input id="eg_html" value="true" />
+      <button id="btnEnter" disabled>进入游戏</button>
+    </div>
+    <pre id="enterOut">（等待）</pre>
+  </section>
+
+  <section>
+    <h3>③ 获取 wskey（解析 bundle.js 中的 t.wskey）</h3>
+    <div class="row">
+      <label>bundle.js</label>
+      <input id="bundleUrl" class="grow" value="https://new-dd-cn.20299999.com/ddnewpc/V3.1.7/js/bundle.js" />
+      <button id="btnWsKey">获取 wskey</button>
+    </div>
+    <div class="muted">
+      保存到 localStorage 键：<code>nakiph_wskey</code>
+    </div>
+    <pre id="wskeyOut">（等待）</pre>
+  </section>
+
+  <section>
+    <h2>WS</h2>
+    <label>Token: <input id="token" size="60" /></label><br />
+    <label>WSKEY:
+      <input id="wskey" value="pV5mY8dR2qGxH1sK9tBzN6uC3fWjE0aL7rTnJ4cQvSgPZyFMiXoUbDlAhOeRwd36"
+        size="75" /></label><br />
+    <label>mid: <input id="mid" value="99" size="20" /></label>
+    <label>tableId: <input id="tableId" value="1" size="5" /></label>
+    <label>type: <input id="type" value="0" size="5" /></label><br />
+    <button onclick="connectWS()">连接</button>
+    <button onclick="closingWS()">关闭连接</button>
+    <button onclick="sendPacket(99)">发送心跳</button>
+    <button onclick="sendPacket(10086)">发送 10086</button>
+    <div id="status"></div>
+
+    <h3>日志输出</h3>
+    <button onclick="ClearLogs()">清除日志</button>
+    <!-- <div id="log"></div> -->
+  </section>
+
+  <!-- 新增：桌台展示区（真实数据来了之后就更新这里） -->
+  <section>
+    <h3>桌台展示（使用真实数据）</h3>
+    <p class="muted">
+      在任意地方拿到类似你发的结构数据后，调用：
+      <code>updateDgTableCard(yourData)</code>
+      即可更新下方卡片。
+    </p>
+    <div id="dg-table-container"></div>
+    <div id="dg-table-debug" class="debug"></div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.4/dist/protobuf.min.js"></script>
+  <script>
+    /** ====== 公共存取 ====== */
+    const BASE = "https://phpclienta.nakiph.xyz";
+    const LS_AUTH = "nakiph_auth";
+    const LS_WSKEY = "nakiph_wskey";
+    const LS_GAME_TOKEN = "nakiph_gameToken";
+
+    const $ = (id) => document.getElementById(id);
+    const outLogin = $("loginOut");
+    const outEnter = $("enterOut");
+    const outWskey = $("wskeyOut");
+    const outSendPreview = $("sendPreview");
+
+    function saveAuthFromLogin(loginData) {
+      const rs = loginData?.resultSet || {};
+      const auth = {
+        tokenHeader: rs.tokenHeader || "Authorization",
+        tokenPrefix: rs.tokenPrefix || "Bearer_",
+        accessToken: rs.accessToken || "",
+      };
+      if (!auth.accessToken) throw new Error("未获取到 accessToken");
+      localStorage.setItem(LS_AUTH, JSON.stringify(auth));
+      return auth;
+    }
+    function getSavedAuth() {
+      try {
+        const raw = localStorage.getItem(LS_AUTH);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    }
+    function buildAuthHeaders(auth) {
+      const h = {};
+      h[auth.tokenHeader] = auth.tokenPrefix + auth.accessToken;
+      return h;
+    }
+
+    /** ====== ① 登录 ====== */
+    $("btnLogin").onclick = async () => {
+      outLogin.textContent = "登录中…";
+      try {
+        const userName = $("username").value.trim();
+        const password = $("password").value;
+        const res = await fetch(`${BASE}/member/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userName, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok)
+          throw new Error(
+            `HTTP ${res.status} ${res.statusText} - ${JSON.stringify(data)}`
+          );
+        outLogin.textContent = JSON.stringify(data, null, 2);
+        const auth = saveAuthFromLogin(data);
+        $("btnEnter").disabled = false;
+
+        // 将登录 token 填入原始 i 里（便于直接加密发送）
+        try {
+          const obj = JSON.parse($("rawI").value);
+          if (!obj.token || obj.token.includes("默认自动填充")) {
+            obj.token = auth.accessToken;
+            $("rawI").value = JSON.stringify(obj, null, 2);
+          }
+        } catch { }
+      } catch (e) {
+        outLogin.textContent = "❌ " + (e.message || e);
+      }
+    };
+
+    /** ====== ② 进入游戏 ====== */
+    $("btnEnter").onclick = async () => {
+      outEnter.textContent = "进入游戏中…";
+      try {
+        const auth = getSavedAuth();
+        if (!auth?.accessToken)
+          throw new Error("本地没有 accessToken，请先登录");
+        const body = {
+          code: $("eg_code").value,
+          gamerCode: $("eg_gamer").value,
+          providerCode: $("eg_provider").value,
+          live: $("eg_live").value === "true",
+          isCockfighting: false,
+          html: $("eg_html").value === "true",
+        };
+        const res = await fetch(`${BASE}/game/enterGame`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...buildAuthHeaders(auth),
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok)
+          throw new Error(
+            `HTTP ${res.status} ${res.statusText} - ${JSON.stringify(data)}`
+          );
+        outEnter.textContent = JSON.stringify(data, null, 2);
+
+        // ================= 解析游戏 token（URL 参数里的 token） =================
+        const url = data?.resultSet;
+        if (url && typeof url === "string") {
+          const u = new URL(url);
+          const gameToken = u.searchParams.get("token");
+          if (gameToken) {
+            localStorage.setItem(LS_GAME_TOKEN, gameToken);
+
+            // ✅ 更新原始参数 i 内的 token，后续发送 WS 会自动使用这个 token
+            try {
+              const obj = JSON.parse($("rawI").value);
+              obj.token = gameToken;
+              $("rawI").value = JSON.stringify(obj, null, 2);
+            } catch { }
+
+            // ✅ 自动填充到输入框
+            $("token").value = gameToken;
+
+            // 日志确认
+            outEnter.textContent += `\n\n✅ 已解析游戏 token:\n${gameToken}`;
+          } else {
+            outEnter.textContent += `\n\n⚠ 未找到 token 参数`;
+          }
+        }
+      } catch (e) {
+        outEnter.textContent = "❌ " + (e.message || e);
+      }
+    };
+
+    /** ====== ③ 获取 wskey ====== */
+    $("btnWsKey").onclick = async () => {
+      outWskey.textContent = "请求 bundle.js 中…";
+      try {
+        const url = $("bundleUrl").value.trim();
+        const res = await fetch(url);
+        const text = await res.text();
+        const m = text.match(/t\.wskey\s*=\s*"([^"]+)"/);
+        if (!m) throw new Error("未匹配到 t.wskey");
+        const wskey = m[1].split("").reverse().join("");
+        localStorage.setItem(LS_WSKEY, wskey);
+        outWskey.textContent = `✅ wskey 已保存：\n\n${wskey}`;
+      } catch (e) {
+        outWskey.textContent = "❌ " + (e.message || e);
+      }
+    };
+    // 初始显示已有 wskey
+    (function () {
+      const exist = localStorage.getItem(LS_WSKEY);
+      if (exist) outWskey.textContent = `✅ 已保存的 wskey：\n\n${exist}`;
+    })();
+
+    /* ======================== 宽容解码（不依赖 .proto） ======================== */
+    class Reader {
+      constructor(buf) {
+        this.buf = buf;
+        this.pos = 0;
+      }
+      eof() {
+        return this.pos >= this.buf.length;
+      }
+      uint32() {
+        let val = 0,
+          shift = 0,
+          b;
+        do {
+          b = this.buf[this.pos++];
+          val |= (b & 0x7f) << shift;
+          shift += 7;
+        } while (b >= 128);
+        return val >>> 0;
+      }
+      int32() {
+        return this.uint32() | 0;
+      }
+      int64() {
+        return this.uint32();
+      }
+      string() {
+        const len = this.uint32();
+        const s = this.buf.subarray(this.pos, this.pos + len);
+        this.pos += len;
+        return new TextDecoder().decode(s);
+      }
+      double() {
+        const v = new DataView(
+          this.buf.buffer,
+          this.buf.byteOffset + this.pos,
+          8
+        ).getFloat64(0, true);
+        this.pos += 8;
+        return v;
+      }
+      skipType(wt) {
+        switch (wt) {
+          case 0:
+            this.uint32();
+            break;
+          case 1:
+            this.pos += 8;
+            break;
+          case 2: {
+            const l = this.uint32();
+            this.pos += l;
+            break;
+          }
+          case 5:
+            this.pos += 4;
+            break;
+          default:
+            throw Error("Unknown wireType: " + wt);
+        }
+      }
+    }
+
+    function parseMsg(r) {
+      const obj = {};
+      while (!r.eof()) {
+        const tag = r.uint32();
+        const id = tag >>> 3,
+          wt = tag & 7;
+        if (!id) {
+          r.skipType(wt);
+          continue;
+        }
+        let val;
+        switch (wt) {
+          case 0:
+            val = r.int32();
+            break;
+          case 1:
+            val = r.double();
+            break;
+          case 2: {
+            const len = r.uint32();
+            const sub = new Reader(r.buf.subarray(r.pos, r.pos + len));
+            r.pos += len;
+            try {
+              const inner = parseMsg(sub);
+              val = Object.keys(inner).length
+                ? inner
+                : new TextDecoder().decode(sub.buf);
+            } catch {
+              val = new TextDecoder().decode(sub.buf);
+            }
+            break;
+          }
+          case 5:
+            val = r.int32();
+            break;
+          default:
+            r.skipType(wt);
+            continue;
+        }
+        if (obj[id] === undefined) obj[id] = val;
+        else if (Array.isArray(obj[id])) obj[id].push(val);
+        else obj[id] = [obj[id], val];
+      }
+      return obj;
+    }
+
+    // 工具
+    const asString = (v) => {
+      if (v == null) return "";
+      if (typeof v === "string") return v;
+      if (typeof v === "object") return "";
+      return String(v);
+    };
+
+    // 映射 Virtual
+    function mapVirtual(r) {
+      if (!r) return [];
+      const arr = Array.isArray(r) ? r : [r];
+      return arr.map((v) => ({
+        seatId: v[1] ?? 0,
+        userName: asString(v[2]),
+        currency: asString(v[3]),
+        betInfo: asString(v[4]),
+        balance: v[5] ?? 0,
+        type: v[6] ?? 0,
+        mid: asString(v[7]),
+        streak: v[8] ?? 0,
+        betNum: v[9] ?? 0,
+        winNum: v[10] ?? 0,
+        head: asString(v[11]),
+        deviceType: v[12] ?? 0,
+        list: Array.isArray(v[13]) ? v[13].map(asString) : [],
+      }));
+    }
+
+    // 映射 Dealer
+    function mapDealer(r) {
+      if (!r) return null;
+      return {
+        id: r[1] ?? 0,
+        name: asString(r[2]),
+        no: asString(r[3]),
+        photo: asString(r[4]),
+        gender: r[5] ?? 0,
+        online: !!r[6],
+        type: r[9] ?? 0,
+      };
+    }
+
+    // 映射 LobbyPush
+    function mapLobbyPush(r) {
+      if (!r) return [];
+      const arr = Array.isArray(r) ? r : [r];
+      return arr.map((v) => ({
+        tableId: v[1] ?? 0,
+        onlineCount: +(v[2] ?? 0),
+        totalAmount: +(v[3] ?? 0),
+        vipName: asString(v[4]),
+        seatFull: !!v[5],
+      }));
+    }
+
+    function fixGameNo(raw) {
+      if (typeof raw === "object" && raw !== null) {
+        const s = Object.values(raw).join("");
+        return s && s.length < 13 ? "25" + s : s;
+      }
+      const s = asString(raw);
+      return s && s.length < 13 ? "25" + s : s;
+    }
+
+    // 映射 Table
+    function mapTable(r) {
+      if (!r) return [];
+      const arr = Array.isArray(r) ? r : [r];
+      return arr.map((v) => ({
+        tableId: v[1] ?? 0,
+        shoeId: asString(v[2]),
+        playId: asString(v[3]),
+        state: v[4] ?? 0,
+        countDown: v[5] ?? 0,
+        result: asString(v[6]),
+        poker: asString(v[7]),
+        tel: Array.isArray(v[8]) ? v[8].map(asString) : [],
+        ext: Array.isArray(v[9]) ? v[9].map(asString) : [],
+        roads: Array.isArray(v[10]) ? v[10].map(asString) : [],
+        gameNo: fixGameNo(v[11]),
+        fms: asString(v[12]),
+        tableName: asString(v[13]),
+        vipName: asString(v[14]),
+        totalAmount: v[15] ?? 0,
+        onlineCount: v[16] ?? 0,
+        dealer: mapDealer(v[17]),
+        gameId: v[18] ?? 0,
+        anchor: v[19] ?? null,
+      }));
+    }
+
+    function detectVersion(raw) {
+      const keys = Object.keys(raw)
+        .map(Number)
+        .filter((n) => !isNaN(n));
+      const maxField = keys.length ? Math.max(...keys) : 0;
+      if (maxField >= 19) return "v3 (anchor)";
+      if (maxField === 18) return "v2 (room)";
+      if (maxField >= 17) return "v1 (standard)";
+      if (maxField <= 14) return "vLite (basic)";
+      return "unknown";
+    }
+
+    function mapPublicBean(raw) {
+      const ver = detectVersion(raw);
+      const o = {
+        _version: ver,
+        cmd: raw[1] ?? 0,
+        token: asString(raw[2]),
+        codeId: raw[3] ?? 0,
+        lobbyId: raw[4] ?? 0,
+        gameNo: asString(raw[5]),
+        tableId: raw[6] ?? 0,
+        seat: raw[7] ?? 0,
+        mid: asString(raw[8] ?? "0"),
+        dList: Array.isArray(raw[9]) ? raw[9] : [],
+        type: raw[10] ?? 0,
+        userName: asString(raw[11]),
+        list: Array.isArray(raw[12]) ? raw[12].map(asString) : [],
+        mids: Array.isArray(raw[13]) ? raw[13] : [],
+        object: asString(raw[14]),
+        virtual: mapVirtual(raw[15]),
+        lobbyPush: mapLobbyPush(raw[16]),
+        table: mapTable(raw[17]),
+      };
+      if (raw[18]) o.room = raw[18];
+      if (raw[19]) o.anchor = raw[19];
+      return o;
+    }
+
+    function sendPublic(ws, base) {
+      const buf = buildPacket(base);
+      ws.send(buf);
+      appendLog(`[SEND] ${JSON.stringify(base)}`);
+      console.log(`[SEND] cmd=${base.cmd} bytes=${buf.length}`);
+    }
+
+    /* ======================== ws ======================== */
+    let ws = null;
+    let PublicBean = new protobuf.Type("PublicBean")
+      .add(new protobuf.Field("cmd", 1, "int32"))
+      .add(new protobuf.Field("token", 2, "string"))
+      .add(new protobuf.Field("codeId", 3, "int32"))
+      .add(new protobuf.Field("lobbyId", 4, "int32"))
+      .add(new protobuf.Field("gameNo", 5, "string"))
+      .add(new protobuf.Field("tableId", 6, "int32"))
+      .add(new protobuf.Field("seat", 7, "int32"))
+      .add(new protobuf.Field("mid", 8, "int64"))
+      .add(new protobuf.Field("dList", 9, "double", "repeated"))
+      .add(new protobuf.Field("type", 10, "int32"))
+      .add(new protobuf.Field("userName", 11, "string"))
+      .add(new protobuf.Field("list", 12, "string", "repeated"))
+      .add(new protobuf.Field("mids", 13, "int64", "repeated"))
+      .add(new protobuf.Field("object", 14, "string"));
+
+    function log(msg) {
+      // const l = document.getElementById("log");
+      // l.textContent += msg + "\n";
+      // l.scrollTop = l.scrollHeight;
+    }
+
+    function ClearLogs() {
+      // const l = document.getElementById("log");
+      // l.textContent = "";
+    }
+
+    function status(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    function getEncryptToken(str) {
+      const wskey = document.getElementById("wskey").value.trim();
+      const key = CryptoJS.enc.Utf8.parse(wskey);
+      const enc = CryptoJS.TripleDES.encrypt(str, key, {
+        mode: CryptoJS.mode.ECB,
+        padding: CryptoJS.pad.Pkcs7,
+      });
+      return enc.toString();
+    }
+
+    function buildPacket(cmd, extra = {}) {
+      const token = document.getElementById("token").value.trim();
+      const mid = document.getElementById("mid").value.trim();
+      const tableId = parseInt(
+        document.getElementById("tableId").value.trim()
+      );
+      const type = parseInt(document.getElementById("type").value.trim());
+      const envelope = {
+        cmd,
+        token,
+        time: Date.now(),
+      };
+      const encToken = getEncryptToken(JSON.stringify(envelope));
+
+      const payload = {
+        cmd,
+        token: encToken,
+        codeId: 0,
+        lobbyId: 0,
+        gameNo: "",
+        seat: 0,
+        tableId,
+        mid,
+        dList: [],
+        type,
+        userName: "",
+        list: [],
+        mids: [],
+        object: cmd === 10086 ? "PC" : "",
+        ...extra,
+      };
+      return PublicBean.encode(payload).finish();
+    }
+
+    function handleTableArrayLike(mapped, targetMap, fieldName) {
+      if (Array.isArray(mapped[fieldName])) {
+        for (const t of mapped[fieldName]) {
+          const tid = Number(t.tableId || t.tableID);
+          if (!tid) continue;
+          targetMap[tid] = t;
+        }
+        schedulePush();
+      }
+    }
+
+    function connectWS() {
+      const token = document.getElementById("token").value.trim();
+      const sign = getEncryptToken(token);
+      const url = `wss://hwdata-new.taxyss.com/?sign=${sign}`;
+      log("连接到: " + url);
+      ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => {
+        log("✅ 已连接");
+        status("已连接");
+        // sendPacket(99);
+        setInterval(() => sendPacket(99), 2000);
+        setTimeout(() => sendInitSeq(), 1000);
+      };
+      ws.onclose = (e) => {
+        log("🔌 连接关闭 code=" + e.code + " reason=" + e.reason);
+        status("连接关闭");
+      };
+      ws.onerror = (err) => {
+        log("❌ 连接错误");
+        status("连接错误");
+      };
+      ws.onmessage = (e) => {
+        try {
+          const raw = parseMsg(new Reader(new Uint8Array(e.data)));
+          const mapped = mapPublicBean(raw);
+          const cmd = mapped.cmd | 0;
+
+          // 调试：关键包打印在控制台
+          if (
+            cmd === 43 ||
+            cmd === 10086 ||
+            cmd === 1002 ||
+            cmd === 1004 ||
+            cmd === 201 ||
+            cmd === 208 ||
+            cmd === 5014 ||
+            cmd === 5015 ||
+            cmd === 6 ||
+            cmd === 24 ||
+            cmd === 1003
+          ) {
+            console.log("🚀 [WS] cmd=", cmd, mapped);
+          }
+
+          log("📩 收到: " + JSON.stringify(mapped));
+
+          // === 根据不同 cmd 更新 pushState 快照 ===
+          if (mapped && typeof mapped === "object") {
+            const tableId = mapped.tableId || mapped.tableID || 0;
+
+            switch (cmd) {
+              case 10086:
+                // 大厅信息（登录信息 / token / key / username 等）
+                pushState.list = Array.isArray(mapped.list) ? mapped.list : [];
+                // 这里如果你想顺便解析 10086 的 key / token，也可以在这里做
+                schedulePush();
+                break;
+
+              case 43:
+                // 大厅桌台总览
+                pushState.table = Array.isArray(mapped.table) ? mapped.table : [];
+                console.log(
+                  "🎲 43 桌台列表 tableIds =",
+                  pushState.table.map(t => t.tableId || t.tableID)
+                );
+                schedulePush();
+                break;
+
+              case 1002:
+                // 单桌实时状态
+                handleTableArrayLike(mapped, pushState.tableStateById, "table");
+                break;
+
+              case 1004:
+                // 路纸：list 是类似 "#X#Y#Z" 的数组
+                handleTableArrayLike(mapped, pushState.roadsByTableId, "table");
+                break;
+
+              case 201:
+                // 桌上玩家信息
+                handleTableArrayLike(mapped, pushState.playersByTableId, "table");
+
+                break;
+
+              case 208:
+                // 当前桌台总投注额统计
+                handleTableArrayLike(mapped, pushState.betAreaByTableId, "table");
+                break;
+
+              case 5014:
+                // 游戏统计 / 胜率分析
+                handleTableArrayLike(mapped, pushState.statsByTableId, "table");
+                break;
+
+              case 85:
+                // 聊天：这里简单记录“当前桌台最近一条”
+                if (tableId) {
+                  pushState.chatByTableId[tableId] = mapped;
+                  schedulePush();
+                }
+                break;
+
+              case 5015:
+                // 游戏事件（进入牌局、离开房间等）
+                if (tableId) {
+                  pushState.eventsByTableId[tableId] = mapped;
+                  schedulePush();
+                }
+                break;
+
+              case 6:
+                // 下注成功信息：dList[0] 是余额
+                if (tableId) {
+                  pushState.betResultByTableId[tableId] = mapped;
+                  schedulePush();
+                }
+                break;
+
+              case 24:
+                // 富豪榜：直接覆盖
+                pushState.richList = Array.isArray(mapped.list)
+                  ? mapped.list
+                  : [];
+                schedulePush();
+                break;
+
+              case 1003:
+                // 开牌结果：tableId + gameNo 作为 key
+                if (tableId && mapped.gameNo) {
+                  if (!pushState.openCardByTableId[tableId]) {
+                    pushState.openCardByTableId[tableId] = {};
+                  }
+                  pushState.openCardByTableId[tableId][mapped.gameNo] = mapped;
+                  schedulePush();
+                }
+                break;
+
+              default:
+                // 其它 cmd 不参与推送聚合
+                break;
+            }
+          }
+        } catch (err) {
+          log("📩 解码失败: " + err.message);
+        }
+      };
+    }
+
+    function closingWS() {
+      ws.close();
+    }
+
+    function sendPacket(cmd) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return alert("未连接");
+      const buf = buildPacket(cmd);
+      console.log(buf);
+      ws.send(buf);
+      log("📤 已发送 cmd=" + cmd);
+    }
+
+    function sendInitSeq() {
+      const seq = [
+        {
+          cmd: 10086,
+          tableId: 1,
+          type: 0,
+          object: "PC",
+        },
+        {
+          cmd: 45,
+          type: 1,
+        },
+        {
+          cmd: 43,
+          tableId: 1,
+          type: 0,
+        },
+        {
+          cmd: 5011,
+          type: 0,
+        },
+        {
+          cmd: 87,
+          type: 1,
+        },
+        {
+          cmd: 24,
+          type: 2,
+        },
+      ];
+      log("🚀 初始化序列开始...");
+      (async () => {
+        for (const pkt of seq) {
+          const buf = buildPacket(pkt.cmd, pkt);
+          ws.send(buf);
+          log("📤 已发送 cmd=" + pkt.cmd);
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        log("✅ 初始化完成");
+      })();
+    }
+
+    /* ======================== 推送 WS（向 phpclientd 发送聚合数据） ======================== */
+    let wsPush = null;
+    let pushQueue = [];
+    // 所有 cmd 的最新快照都放这里
+    const pushState = {
+      // 10086 大厅信息（原来就有）
+      list: [],
+
+      // 43 大厅桌台总览（原来就有）
+      table: [],
+
+      // 1002 单桌实时状态：按 tableId 存
+      tableStateById: {},
+
+      // 1004 路纸：按 tableId 存
+      roadsByTableId: {},
+
+      // 201 桌上玩家：按 tableId 存
+      playersByTableId: {},
+
+      // 208 当前桌台总投注额统计：按 tableId 存
+      betAreaByTableId: {},
+
+      // 5014 游戏统计/胜率分析：按 tableId 存
+      statsByTableId: {},
+
+      // 85 聊天：按 tableId 存一份最近快照（你要存数组也可以）
+      chatByTableId: {},
+
+      // 5015 游戏事件：按 tableId 存最近一次
+      eventsByTableId: {},
+
+      // 6 下注成功信息：按 tableId 存最近一次
+      betResultByTableId: {},
+
+      // 24 富豪榜：直接存数组
+      richList: [],
+
+      // 1003 开牌结果：按 tableId + gameNo 存
+      openCardByTableId: {},
+    };
+    let pushTimer = null;
+
+
+    function connectPushWS() {
+      const url = "wss://phpclienta.nakiph.xyz/ws/getTableInfos";
+      log("推送WS 连接到: " + url);
+      wsPush = new WebSocket(url);
+      wsPush.onopen = () => {
+        log("✅ 推送WS 已连接");
+        // 发送队列中积压的消息
+        if (pushQueue.length) {
+          pushQueue.forEach((msg) => wsPush.send(msg));
+          pushQueue = [];
+        }
+      };
+      wsPush.onclose = (e) => {
+        log("🔌 推送WS 连接关闭 code=" + e.code + " reason=" + e.reason);
+        // 简单重连策略（可按需调整）
+        setTimeout(connectPushWS, 2000);
+      };
+      wsPush.onerror = () => {
+        log("❌ 推送WS 连接错误");
+      };
+    }
+
+    function ensurePushWS() {
+      if (!wsPush || wsPush.readyState === WebSocket.CLOSED) {
+        connectPushWS();
+        return false;
+      }
+      return wsPush.readyState === WebSocket.OPEN;
+    }
+    // 合并发送：始终发送 {list, table} 的“当前快照”
+    function pushCombined() {
+      const payload = {
+        type: "dgGameTableInfos",
+        data: {
+          list: Array.isArray(pushState.list) ? pushState.list : [],
+          table: Array.isArray(pushState.table) ? pushState.table : [],
+          tableStateById: pushState.tableStateById,
+          roadsByTableId: pushState.roadsByTableId,
+          playersByTableId: pushState.playersByTableId,
+          betAreaByTableId: pushState.betAreaByTableId,
+          statsByTableId: pushState.statsByTableId,
+          chatByTableId: pushState.chatByTableId,
+          eventsByTableId: pushState.eventsByTableId,
+          betResultByTableId: pushState.betResultByTableId,
+          richList: pushState.richList,
+          openCardByTableId: pushState.openCardByTableId,
+        },
+      };
+
+      // ⭐ 用真实数据刷新前端 demo —— 展示所有桌子
+      if (window.updateDgTableCard) {
+        const allTables = Array.isArray(pushState.table) ? pushState.table : [];
+        const uiList = [];
+
+        // 遍历 43 里的每一个桌子
+        for (const t of allTables) {
+          const tid = Number(t.tableId || t.tableID);
+          if (!tid) continue;
+          const uiData = buildUiTableData(tid);
+          if (uiData) uiList.push(uiData);
+        }
+
+        console.log("🎯 将要渲染的桌子数量 =", uiList.length);
+
+        if (uiList.length) {
+          // 注意这里传的是数组
+          updateDgTableCard(uiList);
+        } else {
+          console.warn("⚠️ 有 43 数据，但暂时没有可用的 uiData");
+        }
+      }
+
+      const text = JSON.stringify(payload);
+      if (ensurePushWS()) {
+        wsPush.send(text);
+      } else {
+        pushQueue.push(text);
+      }
+      log("📤 推送WS 已发送合并 dgGameTableInfos");
+    }
+
+    // 用 pushState 里最新的数据拼出一张桌子的展示结构
+    function buildUiTableData(tableId) {
+      tableId = Number(tableId) || 0;
+      if (!tableId) return null;
+
+      // 43 返回的大厅桌台数组里找对应台
+      const allTables = Array.isArray(pushState.table) ? pushState.table : [];
+      const summary = allTables.find(
+        t => Number(t.tableId || t.tableID) === tableId
+      );
+      if (!summary) return null;
+
+      // 1002 单桌状态
+      const state1002 = pushState.tableStateById[tableId] || {};
+      // 1004 路纸
+      const roads1004 = pushState.roadsByTableId[tableId] || {};
+      // 208 当前桌台总投注额
+      const bet208 = pushState.betAreaByTableId[tableId] || {};
+      // 你那种大厅结构里的 betInfo
+      const betInfo = {
+        betCount: bet208.betCount || summary.onlineCount || 0,
+        currentBet:
+          bet208.totalAmount ||
+          summary.totalAmount ||
+          0,
+      };
+
+      // tableInfo：尽量对齐你发的示例结构
+      const tableInfo = {
+        stampTime: Date.now(),
+        dealerDomain: 1,
+        gameHall: 0,
+        gameCode: summary.gameId || 0,
+        tableID: tableId,
+        tableName: summary.tableName || "",
+        gameShoe: Number(state1002.shoeId || summary.shoeId || 0),
+        gameRound: Number(state1002.playId || summary.playId || 0),
+        shuffle: 0,
+        maintenance: 0,
+        dealerID: summary.dealer
+          ? `${summary.dealer.name || ""}/-/${summary.dealer.id || ""}`
+          : "",
+        dealerImage: summary.dealer ? summary.dealer.photo || "" : "",
+        supportWeb: 1,
+        newGame: 0,
+      };
+
+      // dealerEvent：用 1002 的状态拼一份
+      const dealerEvent = {
+        dealerId: tableInfo.dealerID,
+        deliverTime: Date.now(),
+        eventType:
+          state1002.state === 1
+            ? "GP_BETTING"
+            : state1002.state === 2
+              ? "GP_DEALING"
+              : state1002.state === 5
+                ? "GP_SETTLEMENT"
+                : "GP_NEW_GAME_START",
+        tableID: tableId,
+        gameRound: tableInfo.gameRound,
+        gameShoe: tableInfo.gameShoe,
+        iTime: state1002.countDown || 0,
+        roundStartTime: Date.now(),
+        shuffle: 0,
+        timestamp: Date.now(),
+      };
+
+      // roadInfo：直接塞 1004 原始数据 + winCounts 占位
+      const roadInfo = {
+        repaintTime: Date.now(),
+        tableID: tableId,
+        gameShoe: tableInfo.gameShoe,
+        gameRound: tableInfo.gameRound,
+        winCounts: roads1004.winCounts || [0, 0, 0],
+        goodRoadType: roads1004.goodRoadType || 0,
+        goodRoadCount: roads1004.goodRoadCount || 0,
+        prevGoodRoadJson: roads1004.prevGoodRoadJson || [],
+        currGoodRoadJson: roads1004.currGoodRoadJson || [],
+        bigRoads: roads1004.bigRoads || [],
+      };
+
+      return { tableInfo, dealerEvent, roadInfo, betInfo };
+    }
+
+    // 轻微防抖，合并短时间内的多次更新
+    function schedulePush() {
+      if (pushTimer) return;
+      pushTimer = setTimeout(() => {
+        pushTimer = null;
+        pushCombined();
+      }, 60); // 60ms 可按需调整
+    }
+
+    /* ======================== 下面是新加的“桌台展示 DEMO” ======================== */
+
+    const DEALER_IMG_HOST =
+      "https://new-dd-cloudfront.ywjxi.com/vd/vd/image/Image/dealer/";
+
+    const EVENT_STATUS_TEXT = {
+      GP_NEW_GAME_START: "新局开始 / 下注中",
+      GP_BETTING: "下注中",
+      GP_DEALING: "发牌中",
+      GP_SETTLEMENT: "结算中",
+      GP_RESULT: "结果展示",
+    };
+
+    function resolveStatus(tableInfo = {}, dealerEvent = {}) {
+      if (tableInfo.maintenance) {
+        return {
+          text: "维护中",
+          className: "status-pill status-pill--maintenance",
+        };
+      }
+      if (dealerEvent.shuffle || tableInfo.shuffle) {
+        return {
+          text: "洗牌中",
+          className: "status-pill status-pill--shuffle",
+        };
+      }
+      const t =
+        EVENT_STATUS_TEXT[dealerEvent.eventType] ||
+        dealerEvent.eventType ||
+        "未知状态";
+      return { text: t, className: "status-pill" };
+    }
+
+    // road 状态码映射（根据你给的 road 值）
+    function mapRoadCode(roadCode) {
+      switch (roadCode) {
+        case 1:
+        case 6:
+          return { char: "B", type: "b", pair: roadCode === 6 };
+        case 2:
+        case 8:
+          return { char: "P", type: "p", pair: roadCode === 8 };
+        case 9:
+        case 10:
+          return { char: "T", type: "t", pair: roadCode === 10 };
+        default:
+          return { char: "", type: "empty", pair: false };
+      }
+    }
+
+    function renderRoadGrid(container, roadInfo = {}) {
+      container.innerHTML = "";
+      const bigRoads = roadInfo.bigRoads || [];
+      if (!bigRoads.length) {
+        container.textContent = "暂无路纸数据";
+        return;
+      }
+
+      const maxX = bigRoads.reduce(
+        (m, r) => Math.max(m, r.showX),
+        0
+      );
+      const maxY = bigRoads.reduce(
+        (m, r) => Math.max(m, r.showY),
+        0
+      );
+      const cols = maxX + 1;
+      const rows = maxY + 1;
+
+      container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      container.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+      // 填空格
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const cell = document.createElement("div");
+          cell.className = "road-cell empty";
+          container.appendChild(cell);
+        }
+      }
+
+      bigRoads.forEach((item) => {
+        const { showX, showY, road } = item;
+        const idx = showY * cols + showX;
+        const cell = container.children[idx];
+        if (!cell) return;
+        const mapped = mapRoadCode(road);
+        cell.className = `road-cell ${mapped.type}${mapped.pair ? " pair" : ""
+          }`;
+        cell.textContent = mapped.char;
+      });
+    }
+
+    function createTableCardRoot() {
+      const root = document.createElement("div");
+      root.className = "table-card";
+
+      const header = document.createElement("div");
+      header.className = "header";
+      header.innerHTML = `
+          <div class="header-left">
+            <span class="game-tag">Baccarat</span>
+            <span class="table-name" data-table-name></span>
+            <span style="font-size:11px;color:#9ca3af;" data-table-id></span>
+          </div>
+          <div class="header-right">
+            <span><strong>Shoe</strong><span data-shoe></span></span>
+            <span><strong>Round</strong><span data-round></span></span>
+          </div>
+        `;
+
+      const road = document.createElement("div");
+      road.className = "road";
+      road.innerHTML = `
+          <div class="road-title">
+            <span>大路</span>
+            <div class="road-stats">
+              <span><span class="dot-b"></span>B:<span data-b-count>0</span></span>
+              <span><span class="dot-p"></span>P:<span data-p-count>0</span></span>
+              <span><span class="dot-t"></span>T:<span data-t-count>0</span></span>
+            </div>
+          </div>
+          <div class="road-grid" data-road-grid></div>
+        `;
+
+      const dealer = document.createElement("div");
+      dealer.className = "dealer";
+      dealer.innerHTML = `
+          <div class="dealer-img-wrap">
+            <img class="dealer-img" data-dealer-img />
+          </div>
+          <div class="dealer-name" data-dealer-name></div>
+          <div><span class="status-pill" data-status></span></div>
+        `;
+
+      const footer = document.createElement("div");
+      footer.className = "footer";
+      footer.innerHTML = `
+          <div class="footer-left">
+            <span><strong>总投注</strong><span data-bet-amount>0</span></span>
+            <span><strong>下注人数</strong><span data-bet-count>0</span></span>
+          </div>
+          <button class="enter-btn">Enter</button>
+        `;
+
+      root.appendChild(header);
+      root.appendChild(road);
+      root.appendChild(dealer);
+      root.appendChild(footer);
+
+      return root;
+    }
+
+    // 主入口：用你给的真实数据更新 UI
+    // data 可以是单个对象，也可以是数组
+    function updateDgTableCard(data) {
+      const container = document.getElementById("dg-table-container");
+      const debugEl = document.getElementById("dg-table-debug");
+
+      // 统一成数组处理
+      const list = Array.isArray(data) ? data : [data];
+
+      // 先清空原来的所有卡片
+      container.innerHTML = "";
+
+      const debugData = [];
+
+      for (const item of list) {
+        if (!item) continue;
+        debugData.push(item);
+
+        const card = createTableCardRoot();
+        container.appendChild(card);
+
+        const tableInfo = item.tableInfo || {};
+        const dealerEvent = item.dealerEvent || {};
+        const roadInfo = item.roadInfo || {};
+        const betInfo = item.betInfo || {};
+
+        card.querySelector("[data-table-name]").textContent =
+          "Baccarat " + (tableInfo.tableName || "");
+        card.querySelector(
+          "[data-table-id]"
+        ).textContent = `ID: ${tableInfo.tableID || ""}`;
+        card.querySelector("[data-shoe]").textContent =
+          tableInfo.gameShoe || "";
+        card.querySelector("[data-round]").textContent =
+          tableInfo.gameRound || "";
+
+        const [bCount, pCount, tCount] = roadInfo.winCounts || [0, 0, 0];
+        card.querySelector("[data-b-count]").textContent = bCount;
+        card.querySelector("[data-p-count]").textContent = pCount;
+        card.querySelector("[data-t-count]").textContent = tCount;
+
+        renderRoadGrid(
+          card.querySelector("[data-road-grid]"),
+          roadInfo
+        );
+
+        const [dealerNameRaw] = (tableInfo.dealerID || "").split("/");
+        card.querySelector("[data-dealer-name]").textContent =
+          dealerNameRaw || tableInfo.dealerID || "";
+        const imgUrl =
+          DEALER_IMG_HOST + (tableInfo.dealerImage || "default.png");
+        card.querySelector("[data-dealer-img]").src = imgUrl;
+
+        const status = resolveStatus(tableInfo, dealerEvent);
+        const statusEl = card.querySelector("[data-status]");
+        statusEl.textContent = status.text;
+        statusEl.className = status.className;
+
+        card.querySelector("[data-bet-amount]").textContent =
+          (betInfo.currentBet || 0).toFixed(1);
+        card.querySelector("[data-bet-count]").textContent =
+          betInfo.betCount || 0;
+      }
+
+      debugEl.textContent =
+        "当前数据快照:\n" + JSON.stringify(debugData, null, 2);
+    }
+
+    // 暴露到全局，方便你在其他地方调用（例如在某个 WebSocket onmessage 里）
+    window.updateDgTableCard = updateDgTableCard;
+  </script>
+</body>
+
+</html>
