@@ -293,36 +293,14 @@
     #dg-table-container {
       display: flex;
       flex-wrap: wrap;
-      /* 多行排列 */
       gap: 16px;
-      /* 卡片之间的间距 */
       align-items: flex-start;
     }
 
     .table-card {
-      width: 520px;
-      background: #1b222c;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
-      overflow: hidden;
-      display: grid;
-      grid-template-columns: 3fr 1.2fr;
-      grid-template-rows: auto auto 1fr;
-      grid-template-areas:
-        "header header"
-        "road dealer"
-        "footer footer";
-      margin-top: 10px;
-    }
-
-    .table-card {
-      /* flex 子项的宽度（3 列布局，留一点间隔）*/
       flex: 0 0 calc(33.333% - 16px);
       max-width: 520px;
-      /* 不超过原来大小 */
       min-width: 320px;
-      /* 太窄就自动换行 */
-
       background: #1b222c;
       border-radius: 10px;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
@@ -335,6 +313,13 @@
         "road dealer"
         "footer footer";
       margin-top: 10px;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .table-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.7);
     }
   </style>
 </head>
@@ -401,7 +386,7 @@
     <!-- <div id="log"></div> -->
   </section>
 
-  <!-- 新增：桌台展示区（真实数据来了之后就更新这里） -->
+  <!-- 新增：桌台展示区 -->
   <section>
     <h3>桌台展示（使用真实数据）</h3>
     <p class="muted">
@@ -475,7 +460,7 @@
 
         // 将登录 token 填入原始 i 里（便于直接加密发送）
         try {
-          const obj = JSON.parse($("rawI").value);
+          const obj = JSON.parse($("rawI")?.value || "{}");
           if (!obj.token || obj.token.includes("默认自动填充")) {
             obj.token = auth.accessToken;
             $("rawI").value = JSON.stringify(obj, null, 2);
@@ -516,7 +501,6 @@
           );
         outEnter.textContent = JSON.stringify(data, null, 2);
 
-        // ================= 解析游戏 token（URL 参数里的 token） =================
         const url = data?.resultSet;
         if (url && typeof url === "string") {
           const u = new URL(url);
@@ -524,17 +508,13 @@
           if (gameToken) {
             localStorage.setItem(LS_GAME_TOKEN, gameToken);
 
-            // ✅ 更新原始参数 i 内的 token，后续发送 WS 会自动使用这个 token
             try {
-              const obj = JSON.parse($("rawI").value);
+              const obj = JSON.parse($("rawI")?.value || "{}");
               obj.token = gameToken;
               $("rawI").value = JSON.stringify(obj, null, 2);
             } catch { }
 
-            // ✅ 自动填充到输入框
             $("token").value = gameToken;
-
-            // 日志确认
             outEnter.textContent += `\n\n✅ 已解析游戏 token:\n${gameToken}`;
           } else {
             outEnter.textContent += `\n\n⚠ 未找到 token 参数`;
@@ -561,13 +541,12 @@
         outWskey.textContent = "❌ " + (e.message || e);
       }
     };
-    // 初始显示已有 wskey
     (function () {
       const exist = localStorage.getItem(LS_WSKEY);
       if (exist) outWskey.textContent = `✅ 已保存的 wskey：\n\n${exist}`;
     })();
 
-    /* ======================== 宽容解码（不依赖 .proto） ======================== */
+    /* ======================== 宽容解码 ======================== */
     class Reader {
       constructor(buf) {
         this.buf = buf;
@@ -651,6 +630,7 @@
           case 2: {
             const len = r.uint32();
             const sub = new Reader(r.buf.subarray(r.pos, r.pos + len));
+            thisPos = r.pos;
             r.pos += len;
             try {
               const inner = parseMsg(sub);
@@ -810,7 +790,6 @@
     function sendPublic(ws, base) {
       const buf = buildPacket(base);
       ws.send(buf);
-      appendLog(`[SEND] ${JSON.stringify(base)}`);
       console.log(`[SEND] cmd=${base.cmd} bytes=${buf.length}`);
     }
 
@@ -891,6 +870,29 @@
       return PublicBean.encode(payload).finish();
     }
 
+    // 207：根据 lobbyPush 更新 table 里的在线人数、金额等
+    function handleLobbyPush207(mapped) {
+      const arr = Array.isArray(mapped.lobbyPush) ? mapped.lobbyPush : [];
+      if (!arr.length || !Array.isArray(pushState.table)) return;
+
+      for (const lp of arr) {
+        const tid = Number(lp.tableId || lp.tableID);
+        if (!tid) continue;
+
+        const t = pushState.table.find(
+          x => Number(x.tableId || x.tableID) === tid
+        );
+        if (!t) continue;
+
+        t.onlineCount = lp.onlineCount ?? t.onlineCount ?? 0;
+        t.totalAmount = lp.totalAmount ?? t.totalAmount ?? 0;
+        t.vipName = lp.vipName ?? t.vipName ?? "";
+        t.seatFull = lp.seatFull ?? t.seatFull ?? false;
+      }
+
+      schedulePush();
+    }
+
     function handleTableArrayLike(mapped, targetMap, fieldName) {
       if (Array.isArray(mapped[fieldName])) {
         for (const t of mapped[fieldName]) {
@@ -913,7 +915,6 @@
       ws.onopen = () => {
         log("✅ 已连接");
         status("已连接");
-        // sendPacket(99);
         setInterval(() => sendPacket(99), 2000);
         setTimeout(() => sendInitSeq(), 1000);
       };
@@ -931,13 +932,13 @@
           const mapped = mapPublicBean(raw);
           const cmd = mapped.cmd | 0;
 
-          // 调试：关键包打印在控制台
           if (
             cmd === 43 ||
             cmd === 10086 ||
             cmd === 1002 ||
             cmd === 1004 ||
             cmd === 201 ||
+            cmd === 207 ||
             cmd === 208 ||
             cmd === 5014 ||
             cmd === 5015 ||
@@ -945,25 +946,21 @@
             cmd === 24 ||
             cmd === 1003
           ) {
-            console.log("🚀 [WS] cmd=", cmd, mapped);
+            // console.log("🚀 [WS] cmd=", cmd, mapped);
           }
 
           log("📩 收到: " + JSON.stringify(mapped));
 
-          // === 根据不同 cmd 更新 pushState 快照 ===
           if (mapped && typeof mapped === "object") {
             const tableId = mapped.tableId || mapped.tableID || 0;
 
             switch (cmd) {
               case 10086:
-                // 大厅信息（登录信息 / token / key / username 等）
                 pushState.list = Array.isArray(mapped.list) ? mapped.list : [];
-                // 这里如果你想顺便解析 10086 的 key / token，也可以在这里做
                 schedulePush();
                 break;
 
               case 43:
-                // 大厅桌台总览
                 pushState.table = Array.isArray(mapped.table) ? mapped.table : [];
                 console.log(
                   "🎲 43 桌台列表 tableIds =",
@@ -972,34 +969,57 @@
                 schedulePush();
                 break;
 
-              case 1002:
+              case 1002: {
                 // 单桌实时状态
                 handleTableArrayLike(mapped, pushState.tableStateById, "table");
+
+                // ⭐ 在 1002 中维护倒计时
+                const arr = Array.isArray(mapped.table) ? mapped.table : [];
+                const now = Date.now();
+
+                for (const t of arr) {
+                  const tid = Number(t.tableId || t.tableID);
+                  if (!tid) continue;
+
+                  if (t.state === 1 && typeof t.countDown === "number") {
+                    pushState.countdownByTableId[tid] = {
+                      base: t.countDown,
+                      lastUpdate: now,
+                      active: true,
+                    };
+                  } else {
+                    pushState.countdownByTableId[tid] = {
+                      base: 0,
+                      lastUpdate: now,
+                      active: false,
+                    };
+                  }
+                }
                 break;
+              }
 
               case 1004:
-                // 路纸：list 是类似 "#X#Y#Z" 的数组
                 handleTableArrayLike(mapped, pushState.roadsByTableId, "table");
                 break;
 
               case 201:
-                // 桌上玩家信息
                 handleTableArrayLike(mapped, pushState.playersByTableId, "table");
+                break;
 
+              case 207:
+                // 根据 lobbyPush 更新当前 table 的金额和在线人数
+                handleLobbyPush207(mapped);
                 break;
 
               case 208:
-                // 当前桌台总投注额统计
                 handleTableArrayLike(mapped, pushState.betAreaByTableId, "table");
                 break;
 
               case 5014:
-                // 游戏统计 / 胜率分析
                 handleTableArrayLike(mapped, pushState.statsByTableId, "table");
                 break;
 
               case 85:
-                // 聊天：这里简单记录“当前桌台最近一条”
                 if (tableId) {
                   pushState.chatByTableId[tableId] = mapped;
                   schedulePush();
@@ -1007,7 +1027,6 @@
                 break;
 
               case 5015:
-                // 游戏事件（进入牌局、离开房间等）
                 if (tableId) {
                   pushState.eventsByTableId[tableId] = mapped;
                   schedulePush();
@@ -1015,7 +1034,6 @@
                 break;
 
               case 6:
-                // 下注成功信息：dList[0] 是余额
                 if (tableId) {
                   pushState.betResultByTableId[tableId] = mapped;
                   schedulePush();
@@ -1023,7 +1041,6 @@
                 break;
 
               case 24:
-                // 富豪榜：直接覆盖
                 pushState.richList = Array.isArray(mapped.list)
                   ? mapped.list
                   : [];
@@ -1031,7 +1048,6 @@
                 break;
 
               case 1003:
-                // 开牌结果：tableId + gameNo 作为 key
                 if (tableId && mapped.gameNo) {
                   if (!pushState.openCardByTableId[tableId]) {
                     pushState.openCardByTableId[tableId] = {};
@@ -1042,7 +1058,6 @@
                 break;
 
               default:
-                // 其它 cmd 不参与推送聚合
                 break;
             }
           }
@@ -1059,7 +1074,6 @@
     function sendPacket(cmd) {
       if (!ws || ws.readyState !== WebSocket.OPEN) return alert("未连接");
       const buf = buildPacket(cmd);
-      console.log(buf);
       ws.send(buf);
       log("📤 已发送 cmd=" + cmd);
     }
@@ -1106,49 +1120,26 @@
       })();
     }
 
-    /* ======================== 推送 WS（向 phpclientd 发送聚合数据） ======================== */
+    /* ======================== 推送 WS（聚合数据给 phpclientd） ======================== */
     let wsPush = null;
     let pushQueue = [];
-    // 所有 cmd 的最新快照都放这里
     const pushState = {
-      // 10086 大厅信息（原来就有）
       list: [],
-
-      // 43 大厅桌台总览（原来就有）
       table: [],
-
-      // 1002 单桌实时状态：按 tableId 存
       tableStateById: {},
-
-      // 1004 路纸：按 tableId 存
       roadsByTableId: {},
-
-      // 201 桌上玩家：按 tableId 存
       playersByTableId: {},
-
-      // 208 当前桌台总投注额统计：按 tableId 存
       betAreaByTableId: {},
-
-      // 5014 游戏统计/胜率分析：按 tableId 存
       statsByTableId: {},
-
-      // 85 聊天：按 tableId 存一份最近快照（你要存数组也可以）
       chatByTableId: {},
-
-      // 5015 游戏事件：按 tableId 存最近一次
       eventsByTableId: {},
-
-      // 6 下注成功信息：按 tableId 存最近一次
       betResultByTableId: {},
-
-      // 24 富豪榜：直接存数组
       richList: [],
-
-      // 1003 开牌结果：按 tableId + gameNo 存
       openCardByTableId: {},
+      // ⭐ 倒计时信息：{ [tableId]: { base, lastUpdate, active } }
+      countdownByTableId: {},
     };
     let pushTimer = null;
-
 
     function connectPushWS() {
       const url = "wss://phpclienta.nakiph.xyz/ws/getTableInfos";
@@ -1156,7 +1147,6 @@
       wsPush = new WebSocket(url);
       wsPush.onopen = () => {
         log("✅ 推送WS 已连接");
-        // 发送队列中积压的消息
         if (pushQueue.length) {
           pushQueue.forEach((msg) => wsPush.send(msg));
           pushQueue = [];
@@ -1164,7 +1154,6 @@
       };
       wsPush.onclose = (e) => {
         log("🔌 推送WS 连接关闭 code=" + e.code + " reason=" + e.reason);
-        // 简单重连策略（可按需调整）
         setTimeout(connectPushWS, 2000);
       };
       wsPush.onerror = () => {
@@ -1179,7 +1168,7 @@
       }
       return wsPush.readyState === WebSocket.OPEN;
     }
-    // 合并发送：始终发送 {list, table} 的“当前快照”
+
     function pushCombined() {
       const payload = {
         type: "dgGameTableInfos",
@@ -1199,12 +1188,11 @@
         },
       };
 
-      // ⭐ 用真实数据刷新前端 demo —— 展示所有桌子
+      // 用真实数据刷新前端 demo —— 展示所有桌子
       if (window.updateDgTableCard) {
         const allTables = Array.isArray(pushState.table) ? pushState.table : [];
         const uiList = [];
 
-        // 遍历 43 里的每一个桌子
         for (const t of allTables) {
           const tid = Number(t.tableId || t.tableID);
           if (!tid) continue;
@@ -1215,7 +1203,6 @@
         console.log("🎯 将要渲染的桌子数量 =", uiList.length);
 
         if (uiList.length) {
-          // 注意这里传的是数组
           updateDgTableCard(uiList);
         } else {
           console.warn("⚠️ 有 43 数据，但暂时没有可用的 uiData");
@@ -1231,25 +1218,20 @@
       log("📤 推送WS 已发送合并 dgGameTableInfos");
     }
 
-    // 用 pushState 里最新的数据拼出一张桌子的展示结构
+    // 用 pushState 拼出一张桌子的展示结构
     function buildUiTableData(tableId) {
       tableId = Number(tableId) || 0;
       if (!tableId) return null;
 
-      // 43 返回的大厅桌台数组里找对应台
       const allTables = Array.isArray(pushState.table) ? pushState.table : [];
       const summary = allTables.find(
         t => Number(t.tableId || t.tableID) === tableId
       );
       if (!summary) return null;
 
-      // 1002 单桌状态
       const state1002 = pushState.tableStateById[tableId] || {};
-      // 1004 路纸
       const roads1004 = pushState.roadsByTableId[tableId] || {};
-      // 208 当前桌台总投注额
       const bet208 = pushState.betAreaByTableId[tableId] || {};
-      // 你那种大厅结构里的 betInfo
       const betInfo = {
         betCount: bet208.betCount || summary.onlineCount || 0,
         currentBet:
@@ -1258,7 +1240,6 @@
           0,
       };
 
-      // tableInfo：尽量对齐你发的示例结构
       const tableInfo = {
         stampTime: Date.now(),
         dealerDomain: 1,
@@ -1278,7 +1259,14 @@
         newGame: 0,
       };
 
-      // dealerEvent：用 1002 的状态拼一份
+      // ⭐ 根据 countdownByTableId 计算当前剩余秒数
+      let cdRemain = 0;
+      const cdInfo = pushState.countdownByTableId[tableId];
+      if (cdInfo && cdInfo.active) {
+        const elapsed = Math.floor((Date.now() - cdInfo.lastUpdate) / 1000);
+        cdRemain = Math.max(cdInfo.base - elapsed, 0);
+      }
+
       const dealerEvent = {
         dealerId: tableInfo.dealerID,
         deliverTime: Date.now(),
@@ -1293,13 +1281,12 @@
         tableID: tableId,
         gameRound: tableInfo.gameRound,
         gameShoe: tableInfo.gameShoe,
-        iTime: state1002.countDown || 0,
+        iTime: cdRemain,
         roundStartTime: Date.now(),
         shuffle: 0,
         timestamp: Date.now(),
       };
 
-      // roadInfo：直接塞 1004 原始数据 + winCounts 占位
       const roadInfo = {
         repaintTime: Date.now(),
         tableID: tableId,
@@ -1316,16 +1303,15 @@
       return { tableInfo, dealerEvent, roadInfo, betInfo };
     }
 
-    // 轻微防抖，合并短时间内的多次更新
     function schedulePush() {
       if (pushTimer) return;
       pushTimer = setTimeout(() => {
         pushTimer = null;
         pushCombined();
-      }, 60); // 60ms 可按需调整
+      }, 60);
     }
 
-    /* ======================== 下面是新加的“桌台展示 DEMO” ======================== */
+    /* ======================== 桌台展示 DEMO ======================== */
 
     const DEALER_IMG_HOST =
       "https://new-dd-cloudfront.ywjxi.com/vd/vd/image/Image/dealer/";
@@ -1358,7 +1344,6 @@
       return { text: t, className: "status-pill" };
     }
 
-    // road 状态码映射（根据你给的 road 值）
     function mapRoadCode(roadCode) {
       switch (roadCode) {
         case 1:
@@ -1397,7 +1382,6 @@
       container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
       container.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 
-      // 填空格
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
           const cell = document.createElement("div");
@@ -1421,6 +1405,7 @@
     function createTableCardRoot() {
       const root = document.createElement("div");
       root.className = "table-card";
+      root.dataset.tableId = "";
 
       const header = document.createElement("div");
       header.className = "header";
@@ -1433,6 +1418,7 @@
           <div class="header-right">
             <span><strong>Shoe</strong><span data-shoe></span></span>
             <span><strong>Round</strong><span data-round></span></span>
+            <span><strong>CD</strong><span data-countdown></span></span>
           </div>
         `;
 
@@ -1479,21 +1465,19 @@
     }
 
     // 主入口：用你给的真实数据更新 UI
-    // data 可以是单个对象，也可以是数组
     function updateDgTableCard(data) {
       const container = document.getElementById("dg-table-container");
       const debugEl = document.getElementById("dg-table-debug");
 
-      // 统一成数组处理
       const list = Array.isArray(data) ? data : [data];
 
-      // 先清空原来的所有卡片
       container.innerHTML = "";
 
       const debugData = [];
 
       for (const item of list) {
         if (!item) continue;
+
         debugData.push(item);
 
         const card = createTableCardRoot();
@@ -1513,6 +1497,16 @@
           tableInfo.gameShoe || "";
         card.querySelector("[data-round]").textContent =
           tableInfo.gameRound || "";
+
+        // ⭐ 显示当前倒计时：根据 pushState.countdownByTableId 计算
+        const tableIdVal = tableInfo.tableID;
+        const cdInfo = pushState.countdownByTableId[tableIdVal];
+        let cd = 0;
+        if (cdInfo && cdInfo.active) {
+          const elapsed = Math.floor((Date.now() - cdInfo.lastUpdate) / 1000);
+          cd = Math.max(cdInfo.base - elapsed, 0);
+        }
+        card.querySelector("[data-countdown]").textContent = cd;
 
         const [bCount, pCount, tCount] = roadInfo.winCounts || [0, 0, 0];
         card.querySelector("[data-b-count]").textContent = bCount;
@@ -1540,13 +1534,72 @@
           (betInfo.currentBet || 0).toFixed(1);
         card.querySelector("[data-bet-count]").textContent =
           betInfo.betCount || 0;
+
+        card.dataset.tableId = tableInfo.tableID;
+
+        // 点击卡片显示调试信息
+        card.onclick = () => {
+          const tableId = Number(card.dataset.tableId);
+          const debugEl = document.getElementById("dg-table-debug");
+
+          const t43 = (pushState.table || []).find(t => Number(t.tableId || t.tableID) === tableId);
+          const s1002 = pushState.tableStateById[tableId];
+          const s1004 = pushState.roadsByTableId[tableId];
+          const s208 = pushState.betAreaByTableId[tableId];
+          const s201 = pushState.playersByTableId[tableId];
+          const s5014 = pushState.statsByTableId[tableId];
+          const s85 = pushState.chatByTableId[tableId];
+          const s5015 = pushState.eventsByTableId[tableId];
+          const s6 = pushState.betResultByTableId[tableId];
+          const s1003 = pushState.openCardByTableId[tableId];
+
+          const result = {
+            tableId,
+            from43: t43 || null,
+            state1002: s1002 || null,
+            roads1004: s1004 || null,
+            bet208: s208 || null,
+            players201: s201 || null,
+            stats5014: s5014 || null,
+            chat85: s85 || null,
+            events5015: s5015 || null,
+            bet6: s6 || null,
+            openCard1003: s1003 || null,
+          };
+
+          debugEl.textContent =
+            "🧩 桌台调试数据:\n" + JSON.stringify(result, null, 2);
+
+          debugLock = true;
+        };
+      }
+
+      // 全局定时器：根据 pushState.countdownByTableId 刷新 CD
+      if (!window._dgCountdownTimer) {
+        window._dgCountdownTimer = setInterval(() => {
+          const now = Date.now();
+          document.querySelectorAll(".table-card").forEach(card => {
+            const tid = Number(card.dataset.tableId || 0);
+            if (!tid) return;
+
+            const cdInfo = pushState.countdownByTableId[tid];
+            let remain = 0;
+
+            if (cdInfo && cdInfo.active) {
+              const elapsed = Math.floor((now - cdInfo.lastUpdate) / 1000);
+              remain = Math.max(cdInfo.base - elapsed, 0);
+            }
+
+            const el = card.querySelector("[data-countdown]");
+            if (el) el.textContent = remain;
+          });
+        }, 1000);
       }
 
       debugEl.textContent =
         "当前数据快照:\n" + JSON.stringify(debugData, null, 2);
     }
 
-    // 暴露到全局，方便你在其他地方调用（例如在某个 WebSocket onmessage 里）
     window.updateDgTableCard = updateDgTableCard;
   </script>
 </body>
