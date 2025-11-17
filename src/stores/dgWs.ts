@@ -27,6 +27,16 @@ interface State {
     countdownTimer: number | null;
 }
 
+/** ================= 推送给后端的 WS 配置 ================= */
+const PUSH_WS_URL = 'wss://phpclienta.nakiph.xyz/ws/getTableInfos';
+// 如果你要用 d 环境，改成：
+// const PUSH_WS_URL = 'wss://phpclientd.nakiph.xyz/ws/getTableInfos';
+
+let wsPush: WebSocket | null = null;
+let pushQueue: string[] = [];
+let pushReconnectTimer: number | null = null;
+/** ===================================================== */
+
 const DEALER_IMG_HOST =
     'https://new-dd-cloudfront.ywjxi.com/vd/vd/image/Image/dealer/';
 
@@ -61,7 +71,8 @@ export function resolveStatus(tableInfo: any, dealerEvent: any) {
 export const useDgWsStore = defineStore('dgWs', {
     state: (): State => ({
         token: '',
-        wskey: 'pV5mY8dR2qGxH1sK9tBzN6uC3fWjE0aL7rTnJ4cQvSgPZyFMiXoUbDlAhOeRwd36',
+        wskey:
+            'pV5mY8dR2qGxH1sK9tBzN6uC3fWjE0aL7rTnJ4cQvSgPZyFMiXoUbDlAhOeRwd36',
         mid: '99',
         tableId: 1,
         type: 0,
@@ -92,20 +103,34 @@ export const useDgWsStore = defineStore('dgWs', {
     actions: {
         initFromAuth() {
             const authStore = useAuthStore();
-            this.token = authStore.gameToken || authStore.auth?.accessToken || '';
-            this.wskey = authStore.wskey || 'pV5mY8dR2qGxH1sK9tBzN6uC3fWjE0aL7rTnJ4cQvSgPZyFMiXoUbDlAhOeRwd36';
+            this.token =
+                authStore.gameToken || authStore.auth?.accessToken || '';
+            this.wskey =
+                authStore.wskey ||
+                'pV5mY8dR2qGxH1sK9tBzN6uC3fWjE0aL7rTnJ4cQvSgPZyFMiXoUbDlAhOeRwd36';
         },
-        setWsConfig(payload: { token?: string; wskey?: string; mid?: string; tableId?: number; type?: number }) {
+
+        setWsConfig(payload: {
+            token?: string;
+            wskey?: string;
+            mid?: string;
+            tableId?: number;
+            type?: number;
+        }) {
             if (payload.token !== undefined) this.token = payload.token;
             if (payload.wskey !== undefined) this.wskey = payload.wskey;
             if (payload.mid !== undefined) this.mid = payload.mid;
             if (payload.tableId !== undefined) this.tableId = payload.tableId;
             if (payload.type !== undefined) this.type = payload.type;
         },
+
         log(msg: string) {
             this.logs.push(msg);
             if (this.logs.length > 200) this.logs.shift();
+            // 也顺便打到控制台
+            // console.log(msg);
         },
+
         getEncryptToken(str: string): string {
             const key = CryptoJS.enc.Utf8.parse(this.wskey.trim());
             const enc = CryptoJS.TripleDES.encrypt(str, key, {
@@ -114,6 +139,7 @@ export const useDgWsStore = defineStore('dgWs', {
             });
             return enc.toString();
         },
+
         buildPacket(cmd: number, extra: Partial<any> = {}): Uint8Array {
             const token = this.token.trim();
             const mid = this.mid.trim();
@@ -146,6 +172,7 @@ export const useDgWsStore = defineStore('dgWs', {
             };
             return PublicBean.encode(payload).finish() as Uint8Array;
         },
+
         sendPacket(cmd: number, extra: Partial<any> = {}) {
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                 alert('WS 未连接');
@@ -155,6 +182,7 @@ export const useDgWsStore = defineStore('dgWs', {
             this.ws.send(buf);
             this.log(`📤 已发送 cmd=${cmd}`);
         },
+
         sendInitSeq() {
             const seq = [
                 { cmd: 10086, tableId: this.tableId, type: 0, object: 'PC' },
@@ -175,30 +203,36 @@ export const useDgWsStore = defineStore('dgWs', {
                 this.log('✅ 初始化完成');
             })();
         },
+
         startHeartbeat() {
             if (this.heartbeatTimer) return;
             this.heartbeatTimer = window.setInterval(() => {
                 this.sendPacket(99);
             }, 2000);
         },
+
         stopHeartbeat() {
             if (this.heartbeatTimer) {
                 clearInterval(this.heartbeatTimer);
                 this.heartbeatTimer = null;
             }
         },
+
         startCountdownTimer() {
             if (this.countdownTimer) return;
             this.countdownTimer = window.setInterval(() => {
                 this.rebuildUiTables();
             }, 1000);
         },
+
         stopCountdownTimer() {
             if (this.countdownTimer) {
                 clearInterval(this.countdownTimer);
                 this.countdownTimer = null;
             }
         },
+
+        /** 连接游戏 WS */
         connect() {
             if (!this.token || !this.wskey) {
                 this.log('token 或 wskey 为空');
@@ -217,6 +251,8 @@ export const useDgWsStore = defineStore('dgWs', {
                 this.connected = true;
                 this.startHeartbeat();
                 this.startCountdownTimer();
+                // 游戏 WS 连上时顺便连上推送 WS
+                this.connectPushWS();
                 setTimeout(() => this.sendInitSeq(), 1000);
             };
             ws.onclose = (e) => {
@@ -232,9 +268,12 @@ export const useDgWsStore = defineStore('dgWs', {
             };
             ws.onmessage = (e) => this.handleMessage(e.data);
         },
+
         close() {
             this.ws?.close();
         },
+
+        /** 游戏 WS 收到消息 */
         handleMessage(data: ArrayBuffer | Blob) {
             try {
                 const arrBuf =
@@ -250,24 +289,29 @@ export const useDgWsStore = defineStore('dgWs', {
                 this.log('📩 解码失败: ' + err?.message);
             }
         },
+
         _handleDecoded(u8: Uint8Array) {
             const raw = parseMsg(new Reader(u8));
             const mapped = mapPublicBean(raw);
             const cmd = mapped.cmd | 0;
-            const tableId = (mapped as any).tableId || (mapped as any).tableID || 0;
+            const tableId =
+                (mapped as any).tableId || (mapped as any).tableID || 0;
 
-            // 根据 cmd 更新 pushState（基本照搬你原来的 switch）
             switch (cmd) {
                 case 10086:
-                    this.pushState.list = Array.isArray(mapped.list) ? mapped.list : [];
+                    this.pushState.list = Array.isArray(mapped.list)
+                        ? mapped.list
+                        : [];
                     this.schedulePush();
                     break;
+
                 case 43:
                     this.pushState.table = Array.isArray(mapped.table)
                         ? mapped.table
                         : [];
                     this.schedulePush();
                     break;
+
                 case 1002: {
                     if (Array.isArray(mapped.table)) {
                         for (const t of mapped.table) {
@@ -293,59 +337,73 @@ export const useDgWsStore = defineStore('dgWs', {
                     }
                     break;
                 }
+
                 case 1004:
                     this.handleTableArrayLike(mapped, 'roadsByTableId');
                     break;
+
                 case 201:
                     this.handleTableArrayLike(mapped, 'playersByTableId');
                     break;
+
                 case 207:
                     this.handleLobbyPush207(mapped);
                     break;
+
                 case 208:
                     this.handleTableArrayLike(mapped, 'betAreaByTableId');
                     break;
+
                 case 5014:
                     this.handleTableArrayLike(mapped, 'statsByTableId');
                     break;
+
                 case 85:
                     if (tableId) {
                         this.pushState.chatByTableId[tableId] = mapped;
                         this.schedulePush();
                     }
                     break;
+
                 case 5015:
                     if (tableId) {
                         this.pushState.eventsByTableId[tableId] = mapped;
                         this.schedulePush();
                     }
                     break;
+
                 case 6:
                     if (tableId) {
                         this.pushState.betResultByTableId[tableId] = mapped;
                         this.schedulePush();
                     }
                     break;
+
                 case 24:
                     this.pushState.richList = Array.isArray(mapped.list)
                         ? mapped.list
                         : [];
                     this.schedulePush();
                     break;
+
                 case 1003:
                     if (tableId && mapped.gameNo) {
                         if (!this.pushState.openCardByTableId[tableId]) {
                             this.pushState.openCardByTableId[tableId] = {};
                         }
-                        this.pushState.openCardByTableId[tableId][mapped.gameNo] = mapped;
+                        this.pushState.openCardByTableId[tableId][mapped.gameNo] =
+                            mapped;
                         this.schedulePush();
                     }
                     break;
+
                 default:
                     break;
             }
+
             this.log('📩 收到: ' + JSON.stringify(mapped));
         },
+
         handleTableArrayLike(mapped: any, field: keyof PushState) {
             const arr = Array.isArray(mapped.table) ? mapped.table : [];
             for (const t of arr) {
@@ -356,6 +414,7 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             this.schedulePush();
         },
+
         handleLobbyPush207(mapped: any) {
             const arr = Array.isArray(mapped.lobbyPush) ? mapped.lobbyPush : [];
             if (!arr.length || !Array.isArray(this.pushState.table)) return;
@@ -373,13 +432,18 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             this.schedulePush();
         },
+
+        /** 🔁 节流：合并 UI 重建 + 推送到后端 */
         schedulePush() {
             if (this.pushTimer) return;
             this.pushTimer = window.setTimeout(() => {
                 this.pushTimer = null;
-                this.rebuildUiTables();
+                this.rebuildUiTables(); // 更新前端桌台 UI
+                this.pushCombined(); // 推送给后端 WS
             }, 60);
         },
+
+        /** 用 pushState 重建所有桌台的 UI 数据 */
         rebuildUiTables() {
             const tables = Array.isArray(this.pushState.table)
                 ? this.pushState.table
@@ -393,11 +457,96 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             this.uiTables = ui;
         },
+
         dealerImageUrl(image: string) {
             return DEALER_IMG_HOST + (image || 'default.png');
         },
+
         clearLogs() {
             this.logs = [];
+        },
+
+        /** ================= 推送 WS 相关 ================= */
+
+        /** 连接推送给后端的 WS */
+        connectPushWS() {
+            const url = PUSH_WS_URL;
+            this.log(`[PUSH] 连接到: ${url}`);
+
+            wsPush = new WebSocket(url);
+
+            wsPush.onopen = () => {
+                this.log('✅ 推送WS 已连接');
+                // 把排队的消息发出去
+                if (pushQueue.length && wsPush) {
+                    pushQueue.forEach((msg) => wsPush!.send(msg));
+                    pushQueue = [];
+                }
+            };
+
+            wsPush.onclose = (e) => {
+                this.log(
+                    `🔌 推送WS 连接关闭 code=${e.code} reason=${e.reason || ''}`,
+                );
+                wsPush = null;
+
+                // 简单重连逻辑
+                if (pushReconnectTimer != null) {
+                    clearTimeout(pushReconnectTimer);
+                }
+                pushReconnectTimer = window.setTimeout(() => {
+                    pushReconnectTimer = null;
+                    this.connectPushWS();
+                }, 2000);
+            };
+
+            wsPush.onerror = () => {
+                this.log('❌ 推送WS 连接错误');
+            };
+        },
+
+        /** 确保推送 WS 是可用的，不可用时尝试重连 */
+        ensurePushWS(): boolean {
+            if (!wsPush || wsPush.readyState === WebSocket.CLOSED) {
+                this.connectPushWS();
+                return false;
+            }
+            return wsPush.readyState === WebSocket.OPEN;
+        },
+
+        /** 把聚合后的桌台信息推送给后端 `/ws/getTableInfos` */
+        pushCombined() {
+            const payload = {
+                type: 'dgGameTableInfos',
+                data: {
+                    list: Array.isArray(this.pushState.list)
+                        ? this.pushState.list
+                        : [],
+                    table: Array.isArray(this.pushState.table)
+                        ? this.pushState.table
+                        : [],
+                    tableStateById: this.pushState.tableStateById,
+                    roadsByTableId: this.pushState.roadsByTableId,
+                    playersByTableId: this.pushState.playersByTableId,
+                    betAreaByTableId: this.pushState.betAreaByTableId,
+                    statsByTableId: this.pushState.statsByTableId,
+                    chatByTableId: this.pushState.chatByTableId,
+                    eventsByTableId: this.pushState.eventsByTableId,
+                    betResultByTableId: this.pushState.betResultByTableId,
+                    richList: this.pushState.richList,
+                    openCardByTableId: this.pushState.openCardByTableId,
+                },
+            };
+
+            const text = JSON.stringify(payload);
+
+            if (this.ensurePushWS()) {
+                wsPush!.send(text);
+            } else {
+                pushQueue.push(text);
+            }
+
+            this.log('📤 推送WS 已发送合并 dgGameTableInfos');
         },
     },
 });
