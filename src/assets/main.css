@@ -1,0 +1,4 @@
+/* src/assets/main.css */
+@import "tailwindcss";
+
+/* 之后你要自定义主题，可以在这里用 @theme、@layer 等继续写 */
