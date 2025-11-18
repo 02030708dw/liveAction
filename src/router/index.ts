@@ -12,6 +12,11 @@ const routes = [
         name: 'test',
         component: () => import('@/views/test/index.vue'),
     },
+    {
+        path: '/via',
+        name: 'via',
+        component: () => import('@/views/VIA/index.vue'),
+    }
 ];
 
 export default createRouter({
