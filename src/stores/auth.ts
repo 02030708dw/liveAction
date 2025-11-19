@@ -163,6 +163,17 @@ export const useAuthStore = defineStore('auth', {
                 html: false,
             });
         },
+
+        /** VIA 专用：参数固定 */
+        async enterWMGame() {
+            return this.enterGame({
+                code: '1',
+                gamerCode: 'WM_PHP',
+                providerCode: 'cq9',
+                live: true,
+                html: false,
+            });
+        },
     },
 });
 
