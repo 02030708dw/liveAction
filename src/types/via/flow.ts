@@ -57,7 +57,7 @@ export const STEP_LABEL: Record<StepKey, string> = {
     step14GetTrendState: 'No.14 当前路纸走势',
     step15EnterOrLeaveChatRoom: 'No.15 进出聊天室',
     step16GetVideoStream: 'No.16 获取视频流',
-    step17RebetInfo: 'No.17 下注 / 总信息',
+    step17RebetInfo: 'No.17 下注',
 };
 
 export interface StepState {
