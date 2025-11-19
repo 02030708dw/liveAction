@@ -7,6 +7,11 @@
                 {{ running ? '运行中...' : '一键执行 1-17 步' }}
             </button>
             <button :disabled="running" @click="reset">重置</button>
+
+            <!-- 🔔 新增：打开投注弹窗 -->
+            <button @click="showBetDialog = true">
+                测试下注（弹窗）
+            </button>
         </div>
 
         <p v-if="currentStepIndex >= 0">
@@ -51,25 +56,27 @@
         <pre class="logs">
     <code v-for="(line, i) in logs" :key="i">{{ line }}</code>
 </pre>
+
+        <!-- 🔔 新增：下注弹窗组件 -->
+        <ViaBetDialog v-model="showBetDialog" defaultTableId="851" defaultGameCode="BACCARAT60S" />
     </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { STEP_ORDER, type StepKey } from '@/types/via/flow';
 import { useViaAuthStore } from '@/stores/viaAuth';
 import { useAuthStore } from '@/stores/auth';
+import ViaBetDialog from './components/ViaBetDialog.vue';
+
 const authStore = useAuthStore();
 async function startViaFlow() {
-    // 1. 平台未登录就先登录
-    // if (!authStore.auth?.accessToken) {
+    // 平台登录 + 进入 VIA 游戏
     await authStore.login('dk0001', 'a123456');
-    // }
-
-    // 2. 进入 VIA 游戏（拿 gameToken）
     await authStore.enterViaGame();
 }
+
 const store = useViaAuthStore();
 const { running, currentStepIndex, steps, logs } = storeToRefs(store);
 const { runAll, runStep, reset } = store;
@@ -89,7 +96,10 @@ function statusClass(step: any) {
     return 'is-idle';
 }
 
-onMounted(startViaFlow)
+// 🔔 控制投注弹窗显示
+const showBetDialog = ref(false);
+
+onMounted(startViaFlow);
 </script>
 
 <style scoped>
