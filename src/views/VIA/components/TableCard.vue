@@ -117,7 +117,7 @@ watch(
     ],
     (newVal, oldVal) => {
         const [newITime, newType] = newVal;
-        const oldITime = oldVal?.[0];
+        // const oldITime = oldVal?.[0];
         const oldType = oldVal?.[1];
 
         const inBetPhase = !!newType && BET_PHASE_TYPES.has(newType);
