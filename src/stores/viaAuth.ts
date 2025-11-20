@@ -441,17 +441,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
             this.log?.(`No.14 路纸预测成功：tableId=${tableId}, gameMode=${gameMode}`);
             return data;
         },
-        /**
-         *下注方法
-         *
-         * 调用方式：
-         * via.placeBet({
-         *   tableId: '851',
-         *   gameCode: 'BACCARAT60S',
-         *   gameMode: 'PLAYER',
-         *   amount: 10,
-         * });
-         */
+
         async placeBet(opts: {
             /** 桌号，例如 "851" */
             tableId: string;
@@ -473,40 +463,32 @@ export const useViaAuthStore = defineStore('viaAuth', {
             }
 
             // 从登录信息里拿币种 / 玩家账号
-            const currency: string =
-                this.loginData?.tokenInfo?.currency || 'PHP';
-            const vendorPlayerId: string =
-                this.loginData?.tokenInfo?.vendorPlayerId || '';
+            const currency: string = this.loginData?.tokenInfo?.currency || 'PHP';
+            const vendorPlayerId: string = this.loginData?.tokenInfo?.vendorPlayerId || '';
 
             if (!vendorPlayerId) {
                 throw new Error('登录信息中缺少 vendorPlayerId，无法下注');
             }
-            if (this.dealerEvents == null) return
 
-            // No.12 dealerEvent 列表
-            const dealerEventArr: any[] =
-                (this.dealerEvents as any)?.data ??
-                (Array.isArray(this.dealerEvents) ? (this.dealerEvents as any) : []);
-
-            const event = dealerEventArr.find(
-                (e: any) => String(e.tableId) === String(tableId),
-            );
-
-            if (!event) {
-                throw new Error(
-                    `未找到桌号 ${tableId} 的 dealerEvent，请先调用 No.12 接口`,
-                );
-            }
-
-            const drawId: string = event.drawId;
-            const roundStartTime: number = event.roundStartTime;
-            const hostId: string = event.dealerId;
-
-            // 荷官昵称直接从 lobbyRooms 里取
-            const lobbyRoom = this.lobbyRooms.find(
+            // ✅ 只从 lobbyRooms 里拿当前局信息
+            const room = this.lobbyRooms.find(
                 (r) => String(r.tableId) === String(tableId),
             );
-            const hostNickname: string = lobbyRoom?.dealerNickname || '';
+
+            if (!room) {
+                throw new Error(`未找到桌号 ${tableId} 的房间信息，请先刷新大厅`);
+            }
+
+            const drawId = room.drawId;
+            const roundStartTime = room.roundStartTime;
+            const hostId = room.dealerId;
+            const hostNickname = room.dealerNickname || '';
+
+            if (!drawId || !roundStartTime || !hostId) {
+                throw new Error(
+                    `桌号 ${tableId} 当前局信息缺失（drawId/roundStartTime/dealerId），请刷新大厅或稍后重试`,
+                );
+            }
 
             const liveType = 'DEALER';
             const device = 'PC';
@@ -567,9 +549,6 @@ export const useViaAuthStore = defineStore('viaAuth', {
             }
         },
 
-        /**
-         * 把 No.9 + No.10 + No.11 + No.12 整合成统一的房间列表
-         */
         buildLobbyRooms() {
             const mapping = this.tableCurrencyMappingData as any;
             if (!mapping || !mapping.tables) {
@@ -580,13 +559,13 @@ export const useViaAuthStore = defineStore('viaAuth', {
             const tables: Record<string, any> = mapping.tables;
             const all: { tableId: string; order: number }[] = mapping.all || [];
 
-            // No.10 牌路列表
+            // No.10 牌路
             const roadArr: any[] =
                 (this.roadsData as any)?.data ??
                 (Array.isArray(this.roadsData) ? (this.roadsData as any) : []);
 
             const roadMap = new Map<string, any>();
-            roadArr?.forEach((r) => {
+            roadArr.forEach((r) => {
                 if (!r) return;
                 roadMap.set(String(r.tableId), r);
             });
@@ -597,7 +576,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
                 (Array.isArray(this.betCalcData) ? (this.betCalcData as any) : []);
 
             const betMap = new Map<string, any>();
-            betArr?.forEach((b) => {
+            betArr.forEach((b) => {
                 if (!b) return;
                 betMap.set(String(b.tableId), b);
             });
@@ -608,14 +587,14 @@ export const useViaAuthStore = defineStore('viaAuth', {
                 (Array.isArray(this.dealerEvents) ? (this.dealerEvents as any) : []);
 
             const dealerMap = new Map<string, any>();
-            dealerEventArr?.forEach((e) => {
+            dealerEventArr.forEach((e) => {
                 if (!e) return;
                 dealerMap.set(String(e.tableId), e);
             });
 
             const rooms: ViaLobbyRoom[] = [];
 
-            // 使用 No.9 的 all 来控制顺序（和大厅排序一致）
+            // 使用 No.9 的 all 来控制顺序（和后台排序一致）
             const ordered = (all.length
                 ? all
                 : Object.values(tables).map((t: any, idx: number) => ({
@@ -630,84 +609,84 @@ export const useViaAuthStore = defineStore('viaAuth', {
                     const t = tables[tableId];
                     if (!t) return;
 
-                    const road = roadMap.get(String(tableId));
-                    const bet = betMap.get(String(tableId));
-                    const ev = dealerMap.get(String(tableId));
+                    const id = String(tableId);
+                    const road = roadMap.get(id);
+                    const bet = betMap.get(id);
+                    const ev = dealerMap.get(id);
 
-                    // 下注统计
-                    let totalBetAmount = 0;
-                    let betPlayers = 0;
-                    let betResults: any[] = [];
-
-                    if (bet) {
-                        betPlayers = bet.betPlayers ?? 0;
-                        betResults = bet.results || [];
-                        totalBetAmount = betResults.reduce(
-                            (sum, r) => sum + (Number(r.betAmount) || 0),
-                            0,
-                        );
+                    // 胜局统计：只保留 B / P / T / pair
+                    let winnerCounter: any = undefined;
+                    if (road?.winnerCounter) {
+                        winnerCounter = {
+                            BANKER: road.winnerCounter.BANKER ?? 0,
+                            PLAYER: road.winnerCounter.PLAYER ?? 0,
+                            TIE: road.winnerCounter.TIE ?? 0,
+                            BANKER_PAIR: road.winnerCounter.BANKER_PAIR ?? 0,
+                            PLAYER_PAIR: road.winnerCounter.PLAYER_PAIR ?? 0,
+                        };
                     }
 
-                    const winnerCounter = (road && road.winnerCounter) || {};
+                    // ⭐ 主路（从 road.mainRoads 里抽出精简字段）
+                    const mainRoads = Array.isArray(road?.mainRoads)
+                        ? road.mainRoads.map((m: any) => ({
+                            showX: m.showX,
+                            showY: m.showY,
+                            tieCount: m.tieCount,
+                            resultMainRoad: m.resultMainRoad,
+                        }))
+                        : [];
+
+                    // 下注统计：把 betAmount 累加
+                    let totalBetAmount = 0;
+                    let betPlayers = 0;
+
+                    if (bet) {
+                        const results = bet.results || [];
+                        totalBetAmount = results.reduce(
+                            (sum: number, r: any) => sum + (Number(r.betAmount) || 0),
+                            0,
+                        );
+                        betPlayers = bet.betPlayers ?? 0;
+                    }
 
                     const tableNameMultiLang = t.tableName || {};
                     const displayName =
                         tableNameMultiLang.en ||
                         tableNameMultiLang.cn ||
-                        `Table ${tableId}`;
+                        `Table ${id}`;
 
                     const room: ViaLobbyRoom = {
-                        tableId: String(tableId),
+                        tableId: id,
                         gameCode: t.gameCode,
                         hallIds: t.hallIds || [],
-                        tableType: t.tableType,
-                        tableTag: t.tableTag,
-                        rebateRate: t.rebateRate,
-                        onlineUser: t.onlineUser,
-                        isTableFavorite: t.isTableFavorite,
-                        tableFavoriteCount: t.tableFavoriteCount,
-
                         tableNameMultiLang,
                         displayName,
 
                         dealerId: ev?.dealerId,
                         dealerNickname: t.dealerNickname || ev?.dealerNickname,
-                        dealerAvatar: t.dealerAvatar, // 如果你有 CDN 前缀，可以在这里拼接
-                        dealerCountry: t.dealerCountry,
-                        dealerCategory: t.dealerCategory,
+                        dealerAvatar: t.dealerAvatar,
 
-                        // 牌路
-                        gameShoe: road?.gameShoe ?? ev?.gameShoe,
-                        gameRound: road?.gameRound ?? ev?.gameRound,
-                        shuffle: road?.shuffle ?? ev?.shuffle,
+                        gameShoe: ev?.gameShoe ?? road?.gameShoe,
+                        gameRound: ev?.gameRound ?? road?.gameRound,
+                        shuffle: ev?.shuffle ?? road?.shuffle,
+                        tableStatus: ev?.tableStatus,
+                        iTime: ev?.iTime,
+
+                        drawId: ev?.drawId,
+                        roundStartTime: ev?.roundStartTime,
+
                         goodRoadType: road?.goodRoadType,
                         isGoodRoad: road?.isGoodRoad,
                         winnerCounter,
 
-                        mainRoads: road?.mainRoads || [],
-                        markerRoads: road?.markerRoads || [],
-                        bigEyes: road?.bigEyes || [],
-                        smalls: road?.smalls || [],
-                        roaches: road?.roaches || [],
+                        // ✅ 主路塞进来
+                        mainRoads,
 
-                        // 当前局状态
-                        drawId: ev?.drawId,
-                        dealerEventType: ev?.dealerEventType,
-                        deliverTime: ev?.deliverTime,
-                        roundStartTime: ev?.roundStartTime,
-                        roundEndTime: ev?.roundEndTime,
-                        tableStatus: ev?.tableStatus,
-                        isActive: ev?.isActive,
-                        iTime: ev?.iTime,
-                        tableCards: ev?.tableCards || [],
-                        tableCardStampTimes: ev?.tableCardStampTimes || [],
-                        winGameModes: ev?.winGameModes || [],
-                        winner: ev?.winner,
-
-                        // 下注统计
                         totalBetAmount,
                         betPlayers,
-                        betResults,
+
+                        // 可选：如果你想一进来就有 dealerEventType
+                        dealerEventType: ev?.dealerEventType,
                     };
 
                     rooms.push(room);
@@ -716,6 +695,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
             this.lobbyRooms = rooms;
             this.log?.(`大厅房间数据已构建，共 ${rooms.length} 个桌台`);
         },
+
         updateLobbyRoom(tableId: string, patch: Partial<LobbyRoomMutableFields>) {
             const id = String(tableId);
             const room = this.lobbyRooms.find(
@@ -729,5 +709,6 @@ export const useViaAuthStore = defineStore('viaAuth', {
 
             Object.assign(room, patch);
         }
+
     },
 });

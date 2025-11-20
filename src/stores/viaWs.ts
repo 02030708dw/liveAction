@@ -87,7 +87,26 @@ interface ViaWsState {
     autoSubBetCalc: boolean;      // No.13 下注统计
     autoSubDealerEvent: boolean;  // No.15 dealerEvent
     autoSubRoad: boolean;         // No.16 road
+
+    // 大厅推送相关
+    pushRunning: boolean;
 }
+// src/stores/viaWs.ts 顶部 import 下面，加上：
+
+const PUSH_WS_URL = 'wss://phpclienta.nakiph.xyz/ws/getTableInfos'; // 后端地址
+
+// 推送给后端的 WS（跟游戏服的 WS 不同一条）
+let wsPush: WebSocket | null = null;
+
+// 推送 WS 还没连上时先排队的消息
+let pushQueue: string[] = [];
+
+// 推送 WS 的重连定时器
+let pushReconnectTimer: number | null = null;
+
+// 大厅定时推送的定时器（50ms 一次）
+let lobbyPushTimer: number | null = null;
+
 
 export const useViaWsStore = defineStore('viaWs', {
     state: (): ViaWsState => ({
@@ -128,6 +147,8 @@ export const useViaWsStore = defineStore('viaWs', {
         autoSubBetCalc: false,
         autoSubDealerEvent: false,
         autoSubRoad: false,
+
+        pushRunning: false,
     }),
 
     actions: {
@@ -305,6 +326,9 @@ export const useViaWsStore = defineStore('viaWs', {
             this.log('🔌 手动断开连接');
             this.clearReconnectTimer();
             this.reconnecting = false;
+
+            // 停掉推送 WS
+            this.stopLobbyPush();
 
             if (!this.ws) return;
             this.sendFrame({ command: 'DISCONNECT' });
@@ -822,6 +846,51 @@ export const useViaWsStore = defineStore('viaWs', {
                 }`,
             );
         },
+        //no.13
+        handleBetCalculationNotification(content: any, destination?: string) {
+            if (!content || typeof content !== 'object') {
+                this.log('❌ BET_CALCULATION 消息 content 为空或格式不对');
+                return;
+            }
+
+            let tableId: string | undefined = content.tableId;
+
+            if (!tableId && destination?.startsWith('/topic/betCalculation/')) {
+                const parts = destination.split('/');
+                tableId = parts[parts.length - 1];
+            }
+
+            if (!tableId) {
+                this.log(
+                    `❌ BET_CALCULATION 无法解析 tableId，destination=${destination}`,
+                );
+                return;
+            }
+
+            const id = String(tableId);
+
+            // 计算该局总下注金额
+            let totalBetAmount = 0;
+            if (Array.isArray(content.results)) {
+                for (const r of content.results) {
+                    if (typeof r?.betAmount === 'number') {
+                        totalBetAmount += r.betAmount;
+                    }
+                }
+            }
+
+            const viaAuth = useViaAuthStore();
+
+            viaAuth.updateLobbyRoom(id, {
+                betPlayers: content.betPlayers,
+                totalBetAmount,
+            });
+
+            this.tableLog(
+                id,
+                `💰 [BET_CALC] table=${id}, gameCode=${content.gameCode}, draw=${content.drawId}, players=${content.betPlayers}, totalBet=${totalBetAmount}`,
+            );
+        },
         //no.15
         handleDealerEventNotification(content: any, destination?: string) {
             if (!content || typeof content !== 'object') {
@@ -846,23 +915,23 @@ export const useViaWsStore = defineStore('viaWs', {
 
             const id = String(tableId);
 
-            // ✅ 更新 viaAuth.lobbyRooms
             const viaAuth = useViaAuthStore();
 
             viaAuth.updateLobbyRoom(id, {
-                // 保存一份完整的 WS 荷官事件，方便房间卡片/详情页使用
-                wsDealerEvent: content,
-
-                // 同时把列表需要动态展示的字段同步一下
                 tableStatus: content.tableStatus,
                 gameRound: content.gameRound,
                 gameShoe: content.gameShoe,
-                // 如有需要还可以加：
-                // drawId: content.drawId,
-                // dealerId: content.dealerId,
-                // iTime: content.iTime,
+                shuffle: content.shuffle,
+                iTime: content.iTime,
+                drawId: content.drawId,
+                roundStartTime: content.roundStartTime,
+                dealerId: content.dealerId,
+                dealerEventType: content.dealerEventType,
+                // dealerNickname 留给 No.9 初始化，不强行覆盖
             });
-            this.log(
+
+            this.tableLog(
+                id,
                 `🎲 [DEALER_EVENT] table=${id}, status=${content.tableStatus}, round=${content.gameRound}, type=${content.dealerEventType}, iTime=${content.iTime}`,
             );
         },
@@ -873,7 +942,6 @@ export const useViaWsStore = defineStore('viaWs', {
                 return;
             }
 
-            // tableId 优先用 content.tableId
             let tableId: string | undefined = content.tableId;
             if (!tableId && destination?.startsWith('/topic/road/')) {
                 tableId = destination.split('/').pop();
@@ -888,78 +956,159 @@ export const useViaWsStore = defineStore('viaWs', {
 
             const id = String(tableId);
 
-            // ✅ 写入 viaAuth.lobbyRooms
             const viaAuth = useViaAuthStore();
 
             viaAuth.updateLobbyRoom(id, {
-                // 保存完整路单快照，UI 自己去拆 mainRoads / markerRoads 等
-                wsRoad: content,
-
-                // 顺手把常用字段同步一下（方便房间卡片展示）
                 gameShoe: content.gameShoe,
                 gameRound: content.gameRound,
                 goodRoadType: content.goodRoadType,
                 isGoodRoad: content.isGoodRoad,
                 winnerCounter: content.winnerCounter,
-                winnerCounts: content.winnerCounts,
+
+                // 把 mainRoads 保存到房间
+                mainRoads: Array.isArray(content.mainRoads)
+                    ? content.mainRoads.map((m: any) => ({
+                        showX: m.showX,
+                        showY: m.showY,
+                        tieCount: m.tieCount,
+                        resultMainRoad: m.resultMainRoad,
+                    }))
+                    : [],
+                // 如果你还想要 markerRoads 等，也可以一起加：
+                // markerRoads: Array.isArray(content.markerRoads) ? content.markerRoads : [],
+                // bigEyes: Array.isArray(content.bigEyes) ? content.bigEyes : [],
+                // smalls: Array.isArray(content.smalls) ? content.smalls : [],
+                // roaches: Array.isArray(content.roaches) ? content.roaches : [],
             });
 
             this.log(
-                `📊 [ROAD] table=${id}, shoe=${content.gameShoe}, round=${content.gameRound}, isGoodRoad=${content.isGoodRoad}, goodRoadType=${content.goodRoadType}`,
+                `📊 [ROAD] table=${id}, shoe=${content.gameShoe}, round=${content.gameRound}, isGoodRoad=${content.isGoodRoad}, goodRoadType=${content.goodRoadType}, mainRoadLen=${content.mainRoads?.length ?? 0}`,
             );
         },
-        // No.13：下注统计 WS 推送
-        handleBetCalculationNotification(content: any, destination?: string) {
-            if (!content || typeof content !== 'object') {
-                this.log('❌ BET_CALCULATION 消息 content 为空或格式不对');
+
+        /** ================= 推送 WS 相关 ================= */
+
+        /** 连接推送给后端的 WS */
+        connectPushWS() {
+            const url = PUSH_WS_URL;
+            this.log(`[PUSH] 连接到: ${url}`);
+
+            // 已有连接且是 OPEN，就不用重复连
+            if (wsPush && wsPush.readyState === WebSocket.OPEN) {
+                this.log('[PUSH] 已处于连接状态');
                 return;
             }
 
-            // 优先用 content.tableId
-            let tableId: string | undefined = content.tableId;
+            wsPush = new WebSocket(url);
 
-            // 兜底：从 destination 里解析：/topic/betCalculation/{gameCode}/{tableId}
-            // 例如 /topic/betCalculation/TX60S/837
-            if (!tableId && destination?.startsWith('/topic/betCalculation/')) {
-                const parts = destination.split('/');
-                tableId = parts[parts.length - 1];
-            }
+            wsPush.onopen = () => {
+                this.log('✅ 推送WS 已连接');
 
-            if (!tableId) {
-                this.log(
-                    `❌ BET_CALCULATION 无法解析 tableId，destination=${destination}`,
-                );
-                return;
-            }
-
-            const id = String(tableId);
-
-            // 计算该局总下注金额（所有区域相加）
-            let totalBetAmount = 0;
-            if (Array.isArray(content.results)) {
-                for (const r of content.results) {
-                    if (typeof r?.betAmount === 'number') {
-                        totalBetAmount += r.betAmount;
-                    }
+                // 把排队的消息发出去
+                if (pushQueue.length && wsPush) {
+                    pushQueue.forEach((msg) => wsPush!.send(msg));
+                    pushQueue = [];
                 }
+            };
+
+            wsPush.onclose = (e) => {
+                this.log(
+                    `🔌 推送WS 连接关闭 code=${e.code} reason=${e.reason || ''}`,
+                );
+                wsPush = null;
+
+                // 简单重连逻辑
+                if (pushReconnectTimer != null) {
+                    clearTimeout(pushReconnectTimer);
+                }
+                pushReconnectTimer = window.setTimeout(() => {
+                    pushReconnectTimer = null;
+                    this.connectPushWS();
+                }, 2000);
+            };
+
+            wsPush.onerror = () => {
+                this.log('❌ 推送WS 连接错误');
+            };
+        },
+
+        /** 开始每 50ms 推送一次 lobbyRooms 给后端 */
+        startLobbyPush() {
+            if (this.pushRunning) {
+                this.log('[PUSH] lobbyRooms 推送已在运行中，忽略重复 start');
+                return;
             }
+
+            // 先确保推送 WS 在尝试连接
+            this.connectPushWS();
+            this.pushRunning = true;
 
             const viaAuth = useViaAuthStore();
 
-            viaAuth.updateLobbyRoom(id, {
-                // 保存整包原始统计，前端画图直接用
-                wsBetStats: content,
+            this.log('[PUSH] 开始每 50ms 推送 lobbyRooms');
 
-                // 一些常用字段同步到房间上，方便列表展示
-                currentDrawId: content.drawId,
-                currentGameCode: content.gameCode,
-                betPlayers: content.betPlayers,
-                totalBetAmount,
-            });
+            lobbyPushTimer = window.setInterval(() => {
+                const rooms = viaAuth.lobbyRooms;
 
-            this.log(
-                `💰 [BET_CALC] table=${id}, gameCode=${content.gameCode}, draw=${content.drawId}, players=${content.betPlayers}, totalBet=${totalBetAmount}`,
-            );
+                if (!rooms || !rooms.length) return;
+
+                // 🔥 根据你现在 TableCard 的 UI，只挑前端用到的字段推给后端
+                const lightRooms = rooms.map((r) => ({
+                    tableId: r.tableId,
+                    gameCode: r.gameCode,
+                    gameShoe: r.gameShoe,
+                    gameRound: r.gameRound,
+                    dealerNickname: r.dealerNickname,
+                    dealerEventType: r.dealerEventType,
+                    tableStatus: r.tableStatus,
+                    shuffle: r.shuffle,
+                    iTime: r.iTime,
+                    totalBetAmount: r.totalBetAmount,
+                    betPlayers: r.betPlayers,
+                    winnerCounter: r.winnerCounter,
+                    mainRoads: Array.isArray(r.mainRoads)
+                        ? r.mainRoads
+                        : [],
+                }));
+
+                const payload = {
+                    type: 'VIA',
+                    serverTime: Date.now(),
+                    rooms: lightRooms,
+                };
+
+                const msg = JSON.stringify(payload);
+
+                if (wsPush && wsPush.readyState === WebSocket.OPEN) {
+                    wsPush.send(msg);
+                } else {
+                    // 连接还没好，先排队（等 onopen 的时候统一发）
+                    pushQueue.push(msg);
+                }
+            }, 50); // 👈 每 50ms 一次
+        },
+
+        /** 停止大厅推送 + 关闭推送 WS */
+        stopLobbyPush() {
+            if (lobbyPushTimer != null) {
+                clearInterval(lobbyPushTimer);
+                lobbyPushTimer = null;
+                this.log('[PUSH] 停止 lobbyRooms 定时推送');
+            }
+
+            this.pushRunning = false;
+
+            if (pushReconnectTimer != null) {
+                clearTimeout(pushReconnectTimer);
+                pushReconnectTimer = null;
+            }
+
+            if (wsPush) {
+                try {
+                    wsPush.close();
+                } catch { /* ignore */ }
+                wsPush = null;
+            }
         },
 
     },

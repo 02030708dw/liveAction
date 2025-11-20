@@ -88,28 +88,76 @@ function clearTimer() {
     }
 }
 
-// 监听 room.iTime，每次变化就重启一个本地倒计时
-watch(
-    () => props.room.iTime,
-    (val) => {
-        clearTimer();
+function startTimer(from: number) {
+    clearTimer();
+    remain.value = from;
+    timer = window.setInterval(() => {
+        if (remain.value === null) return;
 
-        if (typeof val === 'number' && val > 0) {
-            remain.value = val;
-
-            timer = window.setInterval(() => {
-                if (remain.value === null) return;
-
-                if (remain.value <= 1) {
-                    remain.value = 0;
-                    clearTimer();
-                } else {
-                    remain.value = remain.value - 1;
-                }
-            }, 1000);
+        if (remain.value <= 1) {
+            remain.value = 0;
+            clearTimer();
         } else {
-            remain.value = null;
+            remain.value = remain.value - 1;
         }
+    }, 1000);
+}
+
+// 下注阶段的类型（只有这些才需要倒计时）
+const BET_PHASE_TYPES = new Set([
+    'GP_NEW_GAME_START',
+    'GP_BETTING',
+]);
+
+// 同时监听 iTime + dealerEventType
+watch(
+    () => [props.room.iTime, props.room.dealerEventType] as [
+        number | undefined,
+        string | undefined
+    ],
+    (newVal, oldVal) => {
+        const [newITime, newType] = newVal;
+        const oldITime = oldVal?.[0];
+        const oldType = oldVal?.[1];
+
+        const inBetPhase = !!newType && BET_PHASE_TYPES.has(newType);
+
+        // 非下注阶段：不展示倒计时
+        if (!inBetPhase) {
+            remain.value = null;
+            clearTimer();
+            return;
+        }
+
+        if (typeof newITime !== 'number' || newITime <= 0) {
+            remain.value = null;
+            clearTimer();
+            return;
+        }
+
+        const typeChanged = newType !== oldType;
+
+        // 1）阶段变了（上一局→新局），直接用新 iTime 重启
+        if (typeChanged) {
+            startTimer(newITime);
+            return;
+        }
+
+        // 2）阶段没变：根据差值决定要不要重置
+        if (remain.value === null) {
+            // 本地还没有计时，直接启一个
+            startTimer(newITime);
+            return;
+        }
+
+        const diff = Math.abs(newITime - remain.value);
+        const THRESHOLD = 3; // 差距阈值，自己可以调
+
+        if (diff > THRESHOLD) {
+            // 差距太大，当成服务器纠正时间，重置
+            startTimer(newITime);
+        }
+        // 差距不大就忽略，让本地倒计时继续
     },
     { immediate: true },
 );
@@ -121,6 +169,7 @@ const countdown = computed(() => {
     if (remain.value === null || remain.value < 0) return '-';
     return remain.value;
 });
+
 
 // ---------- 其它展示逻辑 ----------
 const gameName = computed(() => {

@@ -88,6 +88,7 @@ const handleSubmit = async () => {
         viaWs.sendNoRequest(15);
         viaWs.sendNoRequest(16);
 
+        viaWs.startLobbyPush(); // 启动 lobby 推送
         handleLoginSuccess();
     } catch (err: any) {
         handleClose();
