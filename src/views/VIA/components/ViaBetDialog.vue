@@ -1,206 +1,304 @@
+<!-- src/views/via/components/BetDialog.vue -->
 <template>
-    <!-- 遮罩层，点击遮罩空白处也能关闭 -->
-    <div v-if="visible" class="via-bet-mask" @click.self="close">
-        <div class="via-bet-modal">
-            <h3 class="title">测试下注（No.17）</h3>
+    <div class="bet-mask">
+        <div class="bet-dialog">
+            <header class="bet-header">
+                <div>
+                    <h3>
+                        桌台 {{ room.tableId }} - {{ room.displayName || room.gameCode }}
+                    </h3>
+                    <p class="sub">
+                        游戏：{{ room.gameCode }} ｜ 当前局：Shoe {{ room.gameShoe ?? '-' }} /
+                        Round {{ room.gameRound ?? '-' }}
+                    </p>
+                </div>
+                <button class="close-btn" @click="onClose">✕</button>
+            </header>
 
-            <div class="form-row">
-                <label>桌号 tableId：</label>
-                <input v-model="tableId" />
-            </div>
+            <section class="bet-body">
+                <!-- 下注区选择 -->
+                <div class="field">
+                    <label>下注区（gameMode）</label>
+                    <select v-model="gameMode">
+                        <option value="PLAYER">PLAYER（闲）</option>
+                        <option value="BANKER">BANKER（庄）</option>
+                        <option value="TIE">TIE（和）</option>
+                        <!-- 你有需要再加其它 DragonBonus / SuperSix 等 -->
+                    </select>
+                </div>
 
-            <div class="form-row">
-                <label>游戏代码 gameCode：</label>
-                <input v-model="gameCode" />
-            </div>
+                <!-- 金额输入 -->
+                <div class="field">
+                    <label>下注金额</label>
+                    <div class="amount-row">
+                        <input v-model.number="amount" type="number" min="0" step="1" placeholder="请输入金额" />
+                        <span class="currency">{{ currency }}</span>
+                    </div>
 
-            <div class="form-row">
-                <label>下注区 gameMode：</label>
-                <select v-model="gameMode">
-                    <option value="PLAYER">PLAYER</option>
-                    <option value="BANKER">BANKER</option>
-                    <option value="TIE">TIE</option>
-                </select>
-            </div>
+                    <div class="chips">
+                        <button v-for="v in quickChips" :key="v" type="button" @click="addChip(v)">
+                            +{{ v }}
+                        </button>
+                        <button type="button" @click="clearAmount">清空</button>
+                    </div>
+                </div>
 
-            <div class="form-row">
-                <label>下注金额：</label>
-                <input v-model.number="amount" type="number" min="1" />
-            </div>
+                <!-- 提示信息 -->
+                <p v-if="localError" class="error">{{ localError }}</p>
+                <p v-else-if="betError" class="error">下注失败：{{ betError }}</p>
+                <p v-else-if="lastBetResult" class="success">
+                    最近一次下注成功，余额：{{ lastBetResult.balance }}（版本 {{ lastBetResult.version }}）
+                </p>
+            </section>
 
-            <div class="btn-row">
-                <button @click="close">取消</button>
-                <button :disabled="submitting" @click="submit">
-                    {{ submitting ? '下注中...' : '确认下注' }}
+            <footer class="bet-footer">
+                <button class="btn cancel" :disabled="betLoading" @click="onClose">
+                    取消
                 </button>
-            </div>
-
-            <p v-if="localError" class="error">下注失败：{{ localError }}</p>
-
-            <div v-if="via.lastBetResult" class="result">
-                <div>最新余额：{{ via.lastBetResult.balance }}</div>
-                <div>余额版本：{{ via.lastBetResult.version }}</div>
-            </div>
-
-            <details v-if="via.lastBetReq" class="debug">
-                <summary>最近一次下注请求（调试）</summary>
-                <pre>{{ via.lastBetReq }}</pre>
-            </details>
+                <button class="btn confirm" :disabled="betLoading" @click="submit">
+                    {{ betLoading ? '下注中…' : '确认下注' }}
+                </button>
+            </footer>
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useViaAuthStore } from '@/stores/viaAuth';
+import type { ViaLobbyRoom } from '@/types/via/lobby';
 
 const props = defineProps<{
-    /** v-model 控制显示/隐藏 */
-    modelValue: boolean;
-    /** 默认桌号，例如 "851" */
-    defaultTableId?: string;
-    /** 默认游戏代码，例如 "BACCARAT60S" */
-    defaultGameCode?: string;
+    room: ViaLobbyRoom;
 }>();
 
 const emit = defineEmits<{
-    (e: 'update:modelValue', v: boolean): void;
+    (e: 'close'): void;
+    (e: 'success'): void;
 }>();
 
 const via = useViaAuthStore();
+const { betLoading, betError, lastBetResult, loginData } = storeToRefs(via);
 
-// 用 computed 包一层，支持 v-model
-const visible = computed({
-    get: () => props.modelValue,
-    set: (v: boolean) => emit('update:modelValue', v),
-});
+// 默认下注区：PLAYER
+const gameMode = ref<'PLAYER' | 'BANKER' | 'TIE'>('PLAYER');
+// 默认金额：0
+const amount = ref<number>(0);
 
-const tableId = ref(props.defaultTableId ?? '');
-const gameCode = ref(props.defaultGameCode ?? '');
-const gameMode = ref('PLAYER');
-const amount = ref<number | null>(10);
-const localError = ref('');
+const localError = ref<string | null>(null);
 
-// 打开弹窗时重置错误 & 默认值
-watch(
-    () => props.modelValue,
-    (v) => {
-        if (v) {
-            localError.value = '';
-            if (props.defaultTableId) tableId.value = props.defaultTableId;
-            if (props.defaultGameCode) gameCode.value = props.defaultGameCode;
-        }
-    },
+const currency = computed(
+    () => loginData.value?.tokenInfo?.currency || 'PHP',
 );
 
-const submitting = computed(() => via.betLoading);
+// 快捷筹码
+const quickChips = [10, 50, 100, 500];
 
-function close() {
-    visible.value = false;
+function addChip(v: number) {
+    amount.value = (amount.value || 0) + v;
+}
+
+function clearAmount() {
+    amount.value = 0;
+}
+
+// 表单校验
+function validate(): boolean {
+    if (!gameMode.value) {
+        localError.value = '请选择下注区';
+        return false;
+    }
+    if (!amount.value || amount.value <= 0) {
+        localError.value = '请输入大于 0 的下注金额';
+        return false;
+    }
+    localError.value = null;
+    return true;
 }
 
 async function submit() {
-    localError.value = '';
-
-    if (!tableId.value || !gameCode.value || !amount.value || amount.value <= 0) {
-        localError.value = '请填写完整信息且金额要大于 0';
-        return;
-    }
+    if (!validate()) return;
 
     try {
         await via.placeBet({
-            tableId: tableId.value,
-            gameCode: gameCode.value,
+            tableId: props.room.tableId,
+            gameCode: props.room.gameCode,
             gameMode: gameMode.value,
             amount: amount.value,
         });
 
-        // 成功后直接关弹窗（调试阶段你也可以注释掉）
-        // close();
-    } catch (err: any) {
-        localError.value = via.betError || err?.message || '下注失败';
+        emit('success');
+        onClose();
+    } catch (e) {
+        // 错误信息已经在 store.betError 中记录，这里只保留本地提示
+        if (!localError.value) {
+            localError.value = '下注失败，请检查日志';
+        }
     }
 }
+
+function onClose() {
+    emit('close');
+}
+
+// 修改输入时清掉错误
+watch([gameMode, amount], () => {
+    localError.value = null;
+});
 </script>
 
 <style scoped>
-.via-bet-mask {
+.bet-mask {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 2000;
+    z-index: 999;
 }
 
-.via-bet-modal {
+.bet-dialog {
     width: 420px;
-    max-width: 90vw;
-    background: #fff;
-    border-radius: 8px;
-    padding: 16px 18px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    font-size: 14px;
+    max-width: 95%;
+    background: #0b1020;
+    border-radius: 10px;
+    border: 1px solid #1f2933;
+    padding: 16px 18px 14px;
+    color: #f9fafb;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
 }
 
-.title {
-    margin-top: 0;
+.bet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
     margin-bottom: 12px;
 }
 
-.form-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 8px;
+.bet-header h3 {
+    margin: 0;
+    font-size: 16px;
 }
 
-.form-row label {
-    width: 140px;
+.sub {
+    margin: 2px 0 0;
+    font-size: 12px;
+    opacity: 0.8;
 }
 
-.form-row input,
-.form-row select {
-    flex: 1;
-    padding: 4px 8px;
-}
-
-.btn-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 12px;
-}
-
-button {
-    padding: 6px 12px;
-    border-radius: 4px;
-    border: 1px solid #ccc;
+.close-btn {
+    border: none;
+    background: transparent;
+    color: #9ca3af;
     cursor: pointer;
+    font-size: 16px;
+}
+
+.bet-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     font-size: 13px;
 }
 
-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+.field label {
+    display: block;
+    margin-bottom: 4px;
+}
+
+select,
+input[type='number'] {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #374151;
+    background: #020617;
+    color: #f9fafb;
+    font-size: 13px;
+    outline: none;
+}
+
+select:focus,
+input[type='number']:focus {
+    border-color: #2563eb;
+}
+
+.amount-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.currency {
+    font-size: 12px;
+    opacity: 0.8;
+    min-width: 40px;
+}
+
+.chips {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chips button {
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #4b5563;
+    background: #111827;
+    color: #e5e7eb;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.chips button:hover {
+    border-color: #818cf8;
 }
 
 .error {
-    margin-top: 8px;
-    color: #d93025;
+    margin: 0;
+    color: #fca5a5;
+    font-size: 12px;
 }
 
-.result {
-    margin-top: 8px;
-    color: #0b8043;
+.success {
+    margin: 0;
+    color: #6ee7b7;
+    font-size: 12px;
 }
 
-.debug {
-    margin-top: 10px;
-    max-height: 200px;
-    overflow: auto;
-    background: #f7f7f7;
-    padding: 6px;
-    border-radius: 4px;
+.bet-footer {
+    margin-top: 14px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.btn.cancel {
+    border-color: #4b5563;
+    background: #111827;
+    color: #e5e7eb;
+}
+
+.btn.confirm {
+    border-color: #10b981;
+    background: #059669;
+    color: #ecfdf5;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 </style>

@@ -1,17 +1,16 @@
 <template>
     <div class="via-flow">
+
+        <ViaWsLogs class="mt-2" />
+
         <h1>VIA 接入流程调试（1-17 步）</h1>
 
         <div class="actions">
             <button :disabled="running" @click="runAll">
                 {{ running ? '运行中...' : '一键执行 1-17 步' }}
             </button>
-            <button :disabled="running" @click="reset">重置</button>
+            <button :disabled="running" @click="resetLog">重置</button>
 
-            <!-- 🔔 新增：打开投注弹窗 -->
-            <button @click="showBetDialog = true">
-                测试下注（弹窗）
-            </button>
         </div>
 
         <p v-if="currentStepIndex >= 0">
@@ -51,31 +50,27 @@
         </ul>
 
         <hr />
-
+        <ViaLobby />
         <h2>日志</h2>
-        <pre class="logs">
-    <code v-for="(line, i) in logs" :key="i">{{ line }}</code>
-</pre>
+        <pre class="logs"><code v-for="(line, i) in logs" :key="i">{{ line }}</code></pre>
 
-        <!-- 🔔 新增：下注弹窗组件 -->
-        <ViaBetDialog v-model="showBetDialog" defaultTableId="851" defaultGameCode="BACCARAT60S" />
     </div>
+    <ViaWsLoginForm v-if="wsLoginVisible" @close="wsLoginVisible = false" />
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { STEP_ORDER, type StepKey } from '@/types/via/flow';
 import { useViaAuthStore } from '@/stores/viaAuth';
-import { useAuthStore } from '@/stores/auth';
-import ViaBetDialog from './components/ViaBetDialog.vue';
 
-const authStore = useAuthStore();
-async function startViaFlow() {
-    // 平台登录 + 进入 VIA 游戏
-    await authStore.login('dk0001', 'a123456');
-    await authStore.enterViaGame();
-}
+
+import ViaLobby from './components/ViaLobby.vue';
+import ViaWsLogs from './components/ViaWsLogs.vue';
+import ViaWsLoginForm from './components/ViaWsLoginForm.vue';
+
+const wsLoginVisible = ref(true);
+
 
 const store = useViaAuthStore();
 const { running, currentStepIndex, steps, logs } = storeToRefs(store);
@@ -96,15 +91,15 @@ function statusClass(step: any) {
     return 'is-idle';
 }
 
-// 🔔 控制投注弹窗显示
-const showBetDialog = ref(false);
 
-onMounted(startViaFlow);
+const resetLog = () => {
+    reset();
+}
 </script>
 
 <style scoped>
 .via-flow {
-    max-width: 900px;
+
     margin: 24px auto;
     padding: 16px;
     border: 1px solid #eee;

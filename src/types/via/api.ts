@@ -21,6 +21,7 @@ export interface ViaTokenInfo {
 
 /** 登录返回里的 data 字段 */
 export interface ViaPlayerLoginData {
+    hasMegaPool: boolean;
     token: string;
     tokenIssueAt: number;
     msgToken: string;

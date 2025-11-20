@@ -6,11 +6,7 @@
     </p>
 
     <div id="dg-table-container">
-      <div
-        v-for="t in tables"
-        :key="t.tableInfo.tableID"
-        class="table-card"
-      >
+      <div v-for="t in tables" :key="t.tableInfo.tableID" class="table-card">
         <!-- header -->
         <div class="header">
           <div class="header-left">
@@ -58,15 +54,10 @@
 
           <div class="road-grid" :style="gridStyle(t)">
             <template v-if="getRoadGrid(t).length">
-              <div
-                v-for="(cell, idx) in getRoadGrid(t)"
-                :key="idx"
-                class="road-cell"
-                :class="[
-                  cell.type,
-                  { pair: cell.pair, empty: cell.type === 'empty' }
-                ]"
-              >
+              <div v-for="(cell, idx) in getRoadGrid(t)" :key="idx" class="road-cell" :class="[
+                cell.type,
+                { pair: cell.pair, empty: cell.type === 'empty' }
+              ]">
                 {{ cell.char }}
               </div>
             </template>
@@ -79,19 +70,13 @@
         <!-- dealer -->
         <div class="dealer">
           <div class="dealer-img-wrap">
-            <img
-              class="dealer-img"
-              :src="dealerImg(t)"
-            />
+            <img class="dealer-img" :src="dealerImg(t)" />
           </div>
           <div class="dealer-name">
             {{ dealerName(t) }}
           </div>
           <div>
-            <span
-              class="status-pill"
-              :class="statusClass(t)"
-            >
+            <span class="status-pill" :class="statusClass(t)">
               {{ statusText(t) }}
             </span>
           </div>
@@ -109,7 +94,6 @@
               <span>{{ t.betInfo.betCount }}</span>
             </span>
           </div>
-          <button class="enter-btn">Enter</button>
         </div>
       </div>
     </div>
