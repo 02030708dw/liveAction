@@ -1089,7 +1089,7 @@ export const useViaWsStore = defineStore('viaWs', {
                     // 连接还没好，先排队（等 onopen 的时候统一发）
                     pushQueue.push(msg);
                 }
-            }, 50); // 👈 每 50ms 一次
+            }, 200); // 👈 每 50ms 一次
         },
 
 
