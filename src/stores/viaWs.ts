@@ -1032,6 +1032,7 @@ export const useViaWsStore = defineStore('viaWs', {
             };
         },
 
+
         /** 开始每 50ms 推送一次 lobbyRooms 给后端 */
         startLobbyPush() {
             if (this.pushRunning) {
@@ -1052,8 +1053,9 @@ export const useViaWsStore = defineStore('viaWs', {
 
                 if (!rooms || !rooms.length) return;
 
-                // 🔥 根据你现在 TableCard 的 UI，只挑前端用到的字段推给后端
+                // 🔥 按照当前 UI + 下注需求，打一个“精简但够用”的房间快照
                 const lightRooms = rooms.map((r) => ({
+                    // —— 原来就有的字段（展示用） ——
                     tableId: r.tableId,
                     gameCode: r.gameCode,
                     gameShoe: r.gameShoe,
@@ -1066,9 +1068,12 @@ export const useViaWsStore = defineStore('viaWs', {
                     totalBetAmount: r.totalBetAmount,
                     betPlayers: r.betPlayers,
                     winnerCounter: r.winnerCounter,
-                    mainRoads: Array.isArray(r.mainRoads)
-                        ? r.mainRoads
-                        : [],
+                    mainRoads: Array.isArray(r.mainRoads) ? r.mainRoads : [],
+
+                    // 下注时需要的当前局信息
+                    drawId: r.drawId,                 // 本局唯一 ID
+                    roundStartTime: r.roundStartTime, // 本局开始时间（毫秒时间戳）
+                    dealerId: r.dealerId,             // hostId
                 }));
 
                 const payload = {
@@ -1087,6 +1092,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 }
             }, 50); // 👈 每 50ms 一次
         },
+
 
         /** 停止大厅推送 + 关闭推送 WS */
         stopLobbyPush() {
