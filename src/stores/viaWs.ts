@@ -1077,9 +1077,8 @@ export const useViaWsStore = defineStore('viaWs', {
                 }));
 
                 const payload = {
-                    type: 'VIA',
-                    serverTime: Date.now(),
-                    rooms: lightRooms,
+                    type: 'viaGameTableInfos',
+                    data: lightRooms,
                 };
 
                 const msg = JSON.stringify(payload);
