@@ -314,7 +314,7 @@ const connectClient = () => {
     console.log("15801 已发送登录 protocol=1");
   };
 
-  ws.onmessage = (event) => {
+  ws.onmessage = () => {
     // console.log("15801 收到:", event.data);
   };
 
@@ -357,7 +357,7 @@ const connectGame = () => {
     console.log("15101 已发送登录 protocol=1");
   };
 
-  ws.onmessage = (event) => {
+  ws.onmessage = () => {
     // console.log("15101 收到:", event.data);
   };
 

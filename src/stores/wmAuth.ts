@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { BASE, LS_AUTH, LS_GAME_TOKEN, LS_WSKEY } from "@/utils/dgProto";
+import { BASE, LS_AUTH, LS_GAME_TOKEN } from "@/utils/dgProto";
 import type { AuthInfo } from "@/utils/dgProto";
 
 interface State {
