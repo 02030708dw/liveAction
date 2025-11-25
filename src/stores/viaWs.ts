@@ -110,8 +110,8 @@ let pushReconnectTimer: number | null = null;
 let lobbyPushTimer: number | null = null;
 
 // 大厅房间更新的批处理缓存
-let pendingLobbyRoomPatches: Record<string, any> = {};
-let lobbyRoomPatchTimer: number | null = null;
+// let pendingLobbyRoomPatches: Record<string, any> = {};
+// let lobbyRoomPatchTimer: number | null = null;
 
 export const useViaWsStore = defineStore('viaWs', {
     state: (): ViaWsState => ({
