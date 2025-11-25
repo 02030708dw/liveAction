@@ -60,6 +60,12 @@ export interface ViaLobbyRoom {
 
     // 当前局阶段（DEALER_EVENT.dealerEventType）
     dealerEventType?: string;
+
+    // ✅ 新增时间
+    deliverTime?: number;
+    roundEndTime?: number;
+    roundStartTimeOriginal?: number;
+    serverTime?: number;
 }
 
 /** 运行时允许被 WS 更新的字段（主键不允许改） */

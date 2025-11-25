@@ -671,9 +671,12 @@ export const useViaAuthStore = defineStore('viaAuth', {
                         shuffle: ev?.shuffle ?? road?.shuffle,
                         tableStatus: ev?.tableStatus,
                         iTime: ev?.iTime,
-
                         drawId: ev?.drawId,
-                        roundStartTime: ev?.roundStartTime,
+                        roundStartTime: ev?.roundStartTime,               // ✅ 下注用
+                        roundStartTimeOriginal: ev?.roundStartTimeOriginal, // ✅ 推送用
+
+                        deliverTime: ev?.deliverTime,
+                        roundEndTime: ev?.roundEndTime,
 
                         goodRoadType: road?.goodRoadType,
                         isGoodRoad: road?.isGoodRoad,

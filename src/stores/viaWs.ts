@@ -28,7 +28,8 @@ const NO_TITLES: Record<number, string> = {
     15: '订阅桌面信息',
     16: '订阅路单',
 };
-
+const MAX_LOGS = 200;                 // 日志最多保留多少条
+const ENABLE_VERBOSE_MESSAGE_LOG = false; // 控制是否打印每条 MESSAGE 的详细日志
 interface ViaWsState {
     // 原始 WebSocket
     ws: WebSocket | null;
@@ -90,6 +91,7 @@ interface ViaWsState {
 
     // 大厅推送相关
     pushRunning: boolean;
+    enableLog: boolean;
 }
 // src/stores/viaWs.ts 顶部 import 下面，加上：
 
@@ -107,6 +109,9 @@ let pushReconnectTimer: number | null = null;
 // 大厅定时推送的定时器（50ms 一次）
 let lobbyPushTimer: number | null = null;
 
+// 大厅房间更新的批处理缓存
+let pendingLobbyRoomPatches: Record<string, any> = {};
+let lobbyRoomPatchTimer: number | null = null;
 
 export const useViaWsStore = defineStore('viaWs', {
     state: (): ViaWsState => ({
@@ -149,26 +154,42 @@ export const useViaWsStore = defineStore('viaWs', {
         autoSubRoad: false,
 
         pushRunning: false,
+        enableLog: true,
     }),
 
     actions: {
         // ---------- 基础工具 ----------
         log(message: string) {
-            const time = new Date().toISOString();
-            this.logs.unshift(`[${time}] ${message}`);
-            // 防止日志无限增长
-            if (this.logs.length > 300) {
-                this.logs.length = 300;
+            if (!this.enableLog) return; // 一键关闭所有日志
+
+            const time = new Date();
+            const timeStr =
+                time.toTimeString().split(' ')[0] + // HH:MM:SS
+                '.' +
+                String(time.getMilliseconds()).padStart(3, '0');
+
+            const full = `[${timeStr}] ${message}`;
+            const logs = this.logs;
+
+            // 尾部 push，避免 unshift 的 O(n) 开销
+            logs.push(full);
+
+            // 超出上限时一次性截掉前面多余的
+            const overflow = logs.length - MAX_LOGS;
+            if (overflow > 0) {
+                logs.splice(0, overflow);
             }
         },
 
         // 只针对某一个 tableId 打日志
         tableLog(tableId: string | number | undefined, message: string) {
+            if (!this.enableLog) return;
             if (!this.debugTableId) return; // 设为 null 就全部关闭
             if (tableId == null) return;
             if (String(tableId) !== String(this.debugTableId)) return;
             this.log(message);
         },
+
         async login(userName: string, password: string) {
             const auth = useAuthStore();
             await auth.login(userName, password);
@@ -515,12 +536,14 @@ export const useViaWsStore = defineStore('viaWs', {
             const destination = frame.headers?.destination;
             const bodyText = frame.body || '';
 
-            this.log(
-                `📩 MESSAGE from ${destination || 'unknown'}: ${bodyText.slice(
-                    0,
-                    200,
-                )}...`,
-            );
+            if (ENABLE_VERBOSE_MESSAGE_LOG) {
+                this.log(
+                    `📩 MESSAGE from ${destination || 'unknown'}: ${bodyText.slice(
+                        0,
+                        200,
+                    )}...`,
+                );
+            }
 
             let payload: any = bodyText;
             try {
@@ -824,7 +847,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 const category = p.category as string;
 
                 if (category === 'DEALER_EVENT') {
-                    this.handleDealerEventNotification(p.content, destination);
+                    this.handleDealerEventNotification(p.content, destination, p.serverTime);
                     return;
                 }
 
@@ -846,6 +869,30 @@ export const useViaWsStore = defineStore('viaWs', {
                 }`,
             );
         },
+        // queueLobbyRoomPatch(tableId: string | number, patch: any) {
+        //     const id = String(tableId);
+
+        //     // 合并同一桌台的多次 patch
+        //     const existing = (pendingLobbyRoomPatches[id] ||= {});
+        //     Object.assign(existing, patch);
+
+        //     // 已经有定时器就不再重复设
+        //     if (lobbyRoomPatchTimer != null) return;
+
+        //     lobbyRoomPatchTimer = window.setTimeout(() => {
+        //         const viaAuth = useViaAuthStore();
+        //         const patches = pendingLobbyRoomPatches;
+
+        //         pendingLobbyRoomPatches = {};
+        //         lobbyRoomPatchTimer = null;
+
+        //         // 统一刷新 Pinia（触发一次批量渲染，而不是每条 WS 渲染一次）
+        //         for (const [roomId, roomPatch] of Object.entries(patches)) {
+        //             viaAuth.updateLobbyRoom(roomId, roomPatch);
+        //         }
+        //     }, 50); // 50ms 内收到的更新全部合并
+        // },
+
         //no.13
         handleBetCalculationNotification(content: any, destination?: string) {
             if (!content || typeof content !== 'object') {
@@ -885,14 +932,9 @@ export const useViaWsStore = defineStore('viaWs', {
                 betPlayers: content.betPlayers,
                 totalBetAmount,
             });
-
-            this.tableLog(
-                id,
-                `💰 [BET_CALC] table=${id}, gameCode=${content.gameCode}, draw=${content.drawId}, players=${content.betPlayers}, totalBet=${totalBetAmount}`,
-            );
         },
         //no.15
-        handleDealerEventNotification(content: any, destination?: string) {
+        handleDealerEventNotification(content: any, destination?: string, serverTime?: number) {
             if (!content || typeof content !== 'object') {
                 this.log('❌ DEALER_EVENT 消息 content 为空或格式不对');
                 return;
@@ -924,11 +966,18 @@ export const useViaWsStore = defineStore('viaWs', {
                 shuffle: content.shuffle,
                 iTime: content.iTime,
                 drawId: content.drawId,
+
                 roundStartTime: content.roundStartTime,
+                roundStartTimeOriginal: content.roundStartTimeOriginal,
+                deliverTime: content.deliverTime,
+                roundEndTime: content.roundEndTime,
+                // ✅ 把服务器时间打到房间上，后面倒计时用这个
+                serverTime: serverTime,
+
                 dealerId: content.dealerId,
                 dealerEventType: content.dealerEventType,
-                // dealerNickname 留给 No.9 初始化，不强行覆盖
             });
+
 
             this.tableLog(
                 id,
@@ -964,26 +1013,13 @@ export const useViaWsStore = defineStore('viaWs', {
                 goodRoadType: content.goodRoadType,
                 isGoodRoad: content.isGoodRoad,
                 winnerCounter: content.winnerCounter,
-
-                // 把 mainRoads 保存到房间
-                mainRoads: Array.isArray(content.mainRoads)
-                    ? content.mainRoads.map((m: any) => ({
-                        showX: m.showX,
-                        showY: m.showY,
-                        tieCount: m.tieCount,
-                        resultMainRoad: m.resultMainRoad,
-                    }))
-                    : [],
-                // 如果你还想要 markerRoads 等，也可以一起加：
-                // markerRoads: Array.isArray(content.markerRoads) ? content.markerRoads : [],
-                // bigEyes: Array.isArray(content.bigEyes) ? content.bigEyes : [],
-                // smalls: Array.isArray(content.smalls) ? content.smalls : [],
-                // roaches: Array.isArray(content.roaches) ? content.roaches : [],
+                mainRoads: Array.isArray(content.mainRoads) ? content.mainRoads : [],
             });
 
-            this.log(
-                `📊 [ROAD] table=${id}, shoe=${content.gameShoe}, round=${content.gameRound}, isGoodRoad=${content.isGoodRoad}, goodRoadType=${content.goodRoadType}, mainRoadLen=${content.mainRoads?.length ?? 0}`,
-            );
+            // 这条日志也可以先关掉，避免高频输出
+            // this.log(
+            //     `📊 [ROAD] table=${id}, shoe=${content.gameShoe}, round=${content.gameRound}, isGoodRoad=${content.isGoodRoad}, goodRoadType=${content.goodRoadType}, mainRoadLen=${content.mainRoads?.length ?? 0}`,
+            // );
         },
 
         /** ================= 推送 WS 相关 ================= */
@@ -1074,6 +1110,12 @@ export const useViaWsStore = defineStore('viaWs', {
                     drawId: r.drawId,                 // 本局唯一 ID
                     roundStartTime: r.roundStartTime, // 本局开始时间（毫秒时间戳）
                     dealerId: r.dealerId,             // hostId
+
+                    // ✅ 新增时间字段
+                    deliverTime: r.deliverTime,        // 2025-11-25 10:54:36
+                    roundStartTimeOriginal: r.roundStartTimeOriginal, // 2025-11-25 10:54:01
+                    roundEndTime: r.roundEndTime,        // 2025-11-25 10:54:19
+                    serverTime: r.serverTime
                 }));
 
                 const payload = {
