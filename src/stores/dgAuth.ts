@@ -14,9 +14,10 @@ interface State {
     loginResp: any | null;
     enterResp: any | null;
     wskeyResp: string;
+    userName: string;
 }
 
-export const useAuthStore = defineStore('auth', {
+export const useAuthStore = defineStore('dgAuth', {
     state: (): State => ({
         auth: null,
         gameToken: '',
@@ -24,6 +25,7 @@ export const useAuthStore = defineStore('auth', {
         loginResp: null,
         enterResp: null,
         wskeyResp: '',
+        userName: '',
     }),
     actions: {
         loadFromLocal() {
@@ -54,6 +56,7 @@ export const useAuthStore = defineStore('auth', {
             return h;
         },
         async login(userName: string, password: string) {
+            this.userName = userName
             const res = await fetch(`${BASE}/member/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

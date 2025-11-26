@@ -324,6 +324,7 @@ export interface UiTableInfo {
     gameCode: number;
     tableID: number;
     tableName: string;
+    gameNo: number;
     gameShoe: number;
     gameRound: number;
     shuffle: number;
@@ -413,6 +414,7 @@ export function buildUiTableData(
         gameCode: summary.gameId || 0,
         tableID: tableId,
         tableName: summary.tableName || '',
+        gameNo: summary.gameNo || '',
         gameShoe,
         gameRound,
         shuffle: 0,

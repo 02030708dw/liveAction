@@ -94,21 +94,51 @@
               <span>{{ t.betInfo.betCount }}</span>
             </span>
           </div>
+          <!-- 新增：右侧投注按钮 -->
+          <div class="footer-right">
+            <button class="enter-btn" @click.stop="openBetModal(t)">
+              投注
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </section>
+  <!-- 投注弹窗 -->
+
+  <DgBetModal v-if="betVisible" :table="currentTable" @close="onBetClose" @bet-success="onBetSuccess" />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { UiTable } from '@/utils/dgProto';
 import { useDgWsStore, resolveStatus } from '@/stores/dgWs';
+import DgBetModal from './DgBetModal.vue'; // 路径按你实际放置调整
 
 defineProps<{
   tables: UiTable[];
 }>();
 
 const wsStore = useDgWsStore();
+
+/** 投注弹窗控制 */
+const betVisible = ref(false);
+const currentTable = ref<UiTable | null>(null);
+
+const openBetModal = (t: UiTable) => {
+  currentTable.value = t;
+  betVisible.value = true;
+};
+
+const onBetClose = () => {
+  betVisible.value = false;
+};
+
+const onBetSuccess = () => {
+  // 这里你可以加 toast / 刷新等
+  console.log('bet success');
+};
+
 
 /** 计算大路网格宽高 */
 const maxX = (t: UiTable) =>
@@ -456,5 +486,10 @@ const statusClass = (t: UiTable) =>
 
 .enter-btn:hover {
   background: #16a34a;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
 }
 </style>
