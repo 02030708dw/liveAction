@@ -1,4 +1,3 @@
-<!-- src/views/via/components/TableCard.vue -->
 <template>
     <article class="table-card">
         <header class="card-header">
@@ -8,13 +7,18 @@
                 <span class="table-id">ID: {{ room.tableId }}</span>
             </div>
 
+            <!-- ✅ 增加 now 字段 -->
             <div class="shoe-info">
-                <span>Shoe {{ room.gameShoe ?? '-' }}</span>
-                <span>Round {{ room.gameRound ?? '-' }}</span>
-                <span>CD {{ countdown }}</span>
+                <span>deliver: {{ formatTime(room.deliverTime) }}</span>
+                <span>start: {{ formatTime(room.roundStartTimeOriginal) }}</span>
+                <span>end: {{ formatTime(room.roundEndTime) }}</span>
+                <span>server: {{ formatTime(room.serverTime) }}</span>
+                <span>now: {{ nowText }}</span>
+                <span>iTime: {{ room.iTime }}</span>
             </div>
         </header>
 
+        <!-- 下面不变 -->
         <section class="card-body">
             <div class="road">
                 <div class="road-title">大路</div>
@@ -33,7 +37,6 @@
                 <div class="avatar-wrap">
                     <div class="avatar" v-if="room.dealerAvatar">
                         {{ room.dealerNickname }}
-                        <!-- <img :src="room.dealerAvatar" :alt="room.dealerNickname || 'dealer'" /> -->
                     </div>
                     <div class="avatar placeholder" v-else>
                         {{ dealerInitial }}
@@ -77,7 +80,37 @@ defineEmits<{
     (e: 'bet', room: ViaLobbyRoom): void;
 }>();
 
-// ---------- 倒计时逻辑 ----------
+// ---------- 时间戳 -> HH:mm:ss ----------
+function formatTime(ts?: number | null) {
+    if (!ts || ts <= 0) return '-';
+    const d = new Date(ts);
+
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+
+    return `${hh}:${mm}:${ss}`;
+}
+
+// ---------- 当前时间（本地） ----------
+const nowTs = ref<number>(Date.now());
+let nowTimer: number | null = null;
+
+function startNowTimer() {
+    if (nowTimer !== null) {
+        clearInterval(nowTimer);
+    }
+    nowTimer = window.setInterval(() => {
+        nowTs.value = Date.now();
+    }, 1000);
+}
+
+// 组件挂载后就开始跑当前时间
+startNowTimer();
+
+const nowText = computed(() => formatTime(nowTs.value));
+
+// ---------- 倒计时逻辑（原样保留） ----------
 const remain = ref<number | null>(null);
 let timer: number | null = null;
 
@@ -103,13 +136,11 @@ function startTimer(from: number) {
     }, 1000);
 }
 
-// 下注阶段的类型（只有这些才需要倒计时）
 const BET_PHASE_TYPES = new Set([
     'GP_NEW_GAME_START',
     'GP_BETTING',
 ]);
 
-// 同时监听 iTime + dealerEventType
 watch(
     () => [props.room.iTime, props.room.dealerEventType] as [
         number | undefined,
@@ -117,12 +148,10 @@ watch(
     ],
     (newVal, oldVal) => {
         const [newITime, newType] = newVal;
-        // const oldITime = oldVal?.[0];
         const oldType = oldVal?.[1];
 
         const inBetPhase = !!newType && BET_PHASE_TYPES.has(newType);
 
-        // 非下注阶段：不展示倒计时
         if (!inBetPhase) {
             remain.value = null;
             clearTimer();
@@ -137,39 +166,38 @@ watch(
 
         const typeChanged = newType !== oldType;
 
-        // 1）阶段变了（上一局→新局），直接用新 iTime 重启
         if (typeChanged) {
             startTimer(newITime);
             return;
         }
 
-        // 2）阶段没变：根据差值决定要不要重置
         if (remain.value === null) {
-            // 本地还没有计时，直接启一个
             startTimer(newITime);
             return;
         }
 
         const diff = Math.abs(newITime - remain.value);
-        const THRESHOLD = 3; // 差距阈值，自己可以调
+        const THRESHOLD = 3;
 
         if (diff > THRESHOLD) {
-            // 差距太大，当成服务器纠正时间，重置
             startTimer(newITime);
         }
-        // 差距不大就忽略，让本地倒计时继续
     },
     { immediate: true },
 );
 
-onBeforeUnmount(clearTimer);
+onBeforeUnmount(() => {
+    clearTimer();
+    if (nowTimer !== null) {
+        clearInterval(nowTimer);
+        nowTimer = null;
+    }
+});
 
-// 显示用的倒计时
 const countdown = computed(() => {
     if (remain.value === null || remain.value < 0) return '-';
     return remain.value;
 });
-
 
 // ---------- 其它展示逻辑 ----------
 const gameName = computed(() => {
@@ -180,31 +208,25 @@ const gameName = computed(() => {
     return 'Game';
 });
 
-// 状态文案，用本地倒计时判断是否“下注中”
 const statusText = computed(() => {
     const room = props.room;
-    const remainSec = remain.value; // 你本地倒计时里的剩余秒数（可能是 null）
+    const remainSec = remain.value;
 
-    // 1. 优先处理“特殊状态”
     if (room.shuffle === 1) return '洗牌中';
     if (room.tableStatus === 2) return '维护中';
     if (room.tableStatus === 3) return '关闭';
 
     const t = room.dealerEventType as string | undefined;
 
-    // 2. 根据 dealerEventType 判阶段
     switch (t) {
         case 'GP_NEW_GAME_START':
         case 'GP_BETTING':
-            // 一般 NEW_GAME_START / GP_BETTING 这段时间就是下注阶段
-            // 有倒计时就展示“新局开始 / 下注中”，没有倒计时就只写新局开始
             if (typeof remainSec === 'number' && remainSec > 0) {
                 return '新局开始 / 下注中';
             }
             return '新局开始';
 
         case 'GP_STOP_BET':
-            // 停止下注，等发牌/开奖
             return '停止下注';
 
         case 'GP_ONE_CARD_DRAWN':
@@ -212,23 +234,19 @@ const statusText = computed(() => {
         case 'GP_DRAWING':
         case 'GP_ONE_CARD_DEALER_DRAWN':
         case 'GP_ONE_CARD_PLAYER_DRAWN':
-            // 你现在抓到的是 GP_ONE_CARD_DRAWN，其实就是“开牌中”
             return '开牌中';
 
         case 'GP_WINNER':
         case 'GP_SETTLEMENT':
-            // 已经有赢家了，结果公布阶段
             return '开牌并公布结果';
     }
 
-    // 3. 没有 dealerEventType 或遇到未知值时的兜底逻辑
     if (typeof remainSec === 'number' && remainSec > 0) {
         return '下注中';
     }
 
     return '新局开始 / 等待';
 });
-
 
 const dealerInitial = computed(() => {
     const name = props.room.dealerNickname || '';
@@ -237,7 +255,9 @@ const dealerInitial = computed(() => {
 });
 </script>
 
+
 <style scoped>
+/* 样式不变 */
 .table-card {
     background: #0b1020;
     border-radius: 10px;

@@ -92,6 +92,12 @@ interface ViaWsState {
     // 大厅推送相关
     pushRunning: boolean;
     enableLog: boolean;
+    // 自动化需要记住的东西
+    lastLoginUser: string | null;      // 上一次登录的账号
+    lastLoginPassword: string | null;  // 上一次登录的密码（只在前端内存里用）
+    autoAllSubscribed: boolean;        // 是否已经自动跑过一轮所有订阅
+    reloginInProgress: boolean;        // 是否正在自动重登录中
+    tokenInvalid: boolean;             // 当前是不是 token 已失效状态
 }
 // src/stores/viaWs.ts 顶部 import 下面，加上：
 
@@ -155,6 +161,12 @@ export const useViaWsStore = defineStore('viaWs', {
 
         pushRunning: false,
         enableLog: true,
+
+        lastLoginUser: null,
+        lastLoginPassword: null,
+        autoAllSubscribed: false,
+        reloginInProgress: false,
+        tokenInvalid: false,
     }),
 
     actions: {
@@ -198,7 +210,9 @@ export const useViaWsStore = defineStore('viaWs', {
             // 看你 apiLogin 返回的是不是这一层结构，如果你的封装里已经处理过，
             // 可以把这两行改成 const data = await apiLogin(auth.gameToken);
             const res = await apiLogin(auth.gameToken);
-
+            // 👉 记住账号密码，后面 token 失效可以自动重登
+            this.lastLoginUser = userName;
+            this.lastLoginPassword = password;
             // 1. STOMP 用的 Authorization token
             this.setAuthToken(res.token);
 
@@ -226,6 +240,51 @@ export const useViaWsStore = defineStore('viaWs', {
             this.log(
                 `🎫 apiLogin 成功: vendorId=${this.vendorId}, vendorPlayerId=${this.vendorPlayerId}, currency=${this.currency}, lang=${this.langKey}`
             );
+        },
+        /** 一键：登录 + 连接 + 全部订阅 + 开启大厅推送 */
+        /** 一键：登录 + VIA 初始化(step01+09-12) + 连接WS + 订阅13/15/16 + 启动推送 */
+        async startAutoFlow(userName: string, password: string, wsUrl: string) {
+            const viaAuth = useViaAuthStore();
+
+            try {
+                this.log('🚀 [AutoFlow] 开始自动登录 & 初始化 & 建立连接');
+
+                // 1. WS 侧：平台登录 + enterViaGame + apiLogin（会顺便保存 vendorId 等）
+                await this.login(userName, password);
+
+                // 2. VIA 接口侧：保持你原来的流程
+                await viaAuth.runStep('step01Login');
+
+                // 3. 初始化大厅（必须先 step09InitLobby，后面才能用 lobbyRooms）
+                await viaAuth.runStep('step09InitLobby');
+                await Promise.all([
+                    viaAuth.runStep('step10GetRoad'),
+                    viaAuth.runStep('step11PlaceBet'),
+                    viaAuth.runStep('step12GetGameState'),
+                ]);
+
+                // 4. 建立 WS 连接
+                this.connect(wsUrl);
+
+                // 等 STOMP CONNECTED
+                await this.waitForStompConnected();
+
+                // 标记：已经完成一轮自动订阅（给自动重登录用）
+                this.autoAllSubscribed = true;
+
+                // 5. 只订阅 13 / 15 / 16（跟你之前 handleSubmit 一样）
+                this.sendNoRequest(13); // 所有桌下注统计
+                this.sendNoRequest(15); // 所有桌 dealerEvent
+                this.sendNoRequest(16); // 所有桌路单
+
+                // 6. 启动 lobby 推送
+                this.startLobbyPush();
+
+                this.log('✅ [AutoFlow] 自动流程完成，正在稳定推送');
+            } catch (err: any) {
+                this.log(`❌ [AutoFlow] 启动失败: ${err?.message || err}`);
+                throw err;
+            }
         },
         // 设置 token，登录成功后由组件调用
         setAuthToken(token: string) {
@@ -476,14 +535,127 @@ export const useViaWsStore = defineStore('viaWs', {
                     );
 
                     const errText = `${msgHeader} ${bodyText}`.toLowerCase();
+
+                    // 👉 Token 失效：自动重登
+                    if (
+                        errText.includes('token invalid') ||
+                        errText.includes('invalidconnectionexception')
+                    ) {
+                        this.handleTokenInvalidError(msgHeader, bodyText);
+                        return;
+                    }
+
+                    // 👉 普通 session 关闭：走原来的重连
                     if (errText.includes('session closed')) {
                         this.scheduleReconnect('STOMP ERROR Session closed');
+                        return;
                     }
 
                     return;
                 }
 
+
                 this.log(`📩 收到 STOMP 帧: ${frame.command}`);
+            }
+        },
+        async handleTokenInvalidError(msgHeader: string, bodyText: string) {
+            this.log(
+                `🚫 服务器提示 Token 已失效，尝试自动重登录。message="${msgHeader}", body="${bodyText}"`
+            );
+
+            // 如果没有记住账号密码，就只能让前端提示用户手动重登
+            if (!this.lastLoginUser || !this.lastLoginPassword) {
+                this.tokenInvalid = true;
+                this.status = 'Token 失效，请重新登录';
+                this.log('❌ 无 lastLoginUser/lastLoginPassword，无法自动重登录');
+                this.stopLobbyPush();
+                this.clearReconnectTimer();
+                this.clearHeartbeat();
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    try { this.ws.close(); } catch { }
+                }
+                this.ws = null;
+                this.connected = false;
+                this.stompConnected = false;
+                this.subscriptions = {};
+                return;
+            }
+
+            if (this.reloginInProgress) {
+                this.log('⏳ 已在自动重登录中，忽略重复触发');
+                return;
+            }
+
+            this.reloginInProgress = true;
+            this.tokenInvalid = true;
+            this.status = 'Token 失效，正在自动重新登录...';
+
+            // 记录当前推送是否在跑
+            const shouldRestartPush = this.pushRunning;
+
+            // 先停掉原来的连接 & 推送 & 重连计时器
+            this.stopLobbyPush();
+            this.clearReconnectTimer();
+            this.clearHeartbeat();
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                try { this.ws.close(); } catch { }
+            }
+            this.ws = null;
+            this.connected = false;
+            this.stompConnected = false;
+            this.subscriptions = {};
+            this.authToken = null;
+
+            try {
+                this.log('🔐 [AutoRelogin] 重新登录中...');
+                await this.login(this.lastLoginUser, this.lastLoginPassword);
+
+                if (!this.lastUrl) {
+                    this.log('❌ [AutoRelogin] lastUrl 为空，无法重连 WS');
+                    this.status = '自动重登录失败，请手动重试';
+                    return;
+                }
+
+                this.log(`🔁 [AutoRelogin] 使用新 token 重连 WS: ${this.lastUrl}`);
+                this.connect(this.lastUrl);
+
+                await this.waitForStompConnected();
+
+                this.log('✅ [AutoRelogin] STOMP 已重新连接');
+
+                // 重连后自动恢复订阅
+                if (this.autoAllSubscribed) {
+                    this.log('🔁 [AutoRelogin] 恢复自动订阅的各频道');
+                    this.sendNoRequest(2);
+                    this.sendNoRequest(3);
+                    this.sendNoRequest(4);
+                    this.sendNoRequest(5);
+                    this.sendNoRequest(6);
+                    this.sendNoRequest(7);
+                    this.sendNoRequest(8);
+                    this.sendNoRequest(9);
+                    this.sendNoRequest(10);
+                    this.sendNoRequest(12);
+
+                    // 下注统计 / dealerEvent / road 会走 autoSub* + subscribeXXXForAllTables
+                    this.sendNoRequest(13);
+                    this.sendNoRequest(15);
+                    this.sendNoRequest(16);
+                }
+
+                // 恢复 lobby 推送
+                if (shouldRestartPush) {
+                    this.startLobbyPush();
+                }
+
+                this.tokenInvalid = false;
+                this.status = '已自动重新登录并恢复连接';
+                this.log('✅ [AutoRelogin] 完成自动重登录 + 重连 + 恢复订阅');
+            } catch (err: any) {
+                this.status = '自动重登录失败，请手动重新登录';
+                this.log(`❌ [AutoRelogin] 失败: ${err?.message || err}`);
+            } finally {
+                this.reloginInProgress = false;
             }
         },
         autoResubscribeAfterConnected() {

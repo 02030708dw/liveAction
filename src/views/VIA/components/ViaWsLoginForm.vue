@@ -63,32 +63,12 @@ const handleSubmit = async () => {
     loading.value = true;
 
     try {
-        // 1. WS 侧：平台登录 + enterViaGame + apiLogin
-        await viaWs.login(username.value, password.value);
+        await viaWs.startAutoFlow(
+            username.value,
+            password.value,
+            wsUrl.value, // 比如 'wss://www.j4r3b77.com/websocket-service/player'
+        );
 
-        // 2. VIA 流程 No.1：只会复用 authStore.gameToken，不会再平台登录一次
-        await viaAuth.runStep('step01Login');
-
-        // 3. No.9–12 初始化大厅
-        await viaAuth.runStep('step09InitLobby');
-        await Promise.all([
-            viaAuth.runStep('step10GetRoad'),
-            viaAuth.runStep('step11PlaceBet'),
-            viaAuth.runStep('step12GetGameState'),
-        ]);
-
-        // 4. 建立 WS 连接
-        viaWs.connect(wsUrl.value);
-
-        // 等 STOMP CONNECTED
-        await viaWs.waitForStompConnected();
-
-        // 再订阅 13/15/16（这里会对所有 lobbyRooms 进行订阅）
-        viaWs.sendNoRequest(13);
-        viaWs.sendNoRequest(15);
-        viaWs.sendNoRequest(16);
-
-        viaWs.startLobbyPush(); // 启动 lobby 推送
         handleLoginSuccess();
     } catch (err: any) {
         handleClose();
@@ -99,7 +79,6 @@ const handleSubmit = async () => {
         loading.value = false;
     }
 };
-
 
 const emit = defineEmits<{
     (e: 'close'): void
