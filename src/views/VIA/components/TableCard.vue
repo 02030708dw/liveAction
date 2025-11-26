@@ -194,10 +194,10 @@ onBeforeUnmount(() => {
     }
 });
 
-const countdown = computed(() => {
-    if (remain.value === null || remain.value < 0) return '-';
-    return remain.value;
-});
+// const countdown = computed(() => {
+//     if (remain.value === null || remain.value < 0) return '-';
+//     return remain.value;
+// });
 
 // ---------- 其它展示逻辑 ----------
 const gameName = computed(() => {

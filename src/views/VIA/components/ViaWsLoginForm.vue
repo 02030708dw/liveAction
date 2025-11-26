@@ -40,11 +40,11 @@
 import { ref } from 'vue';
 
 import { useViaWsStore } from '@/stores/viaWs';
-import { useViaAuthStore } from '@/stores/viaAuth';
+// import { useViaAuthStore } from '@/stores/viaAuth';
 
 
 const viaWs = useViaWsStore();
-const viaAuth = useViaAuthStore();
+// const viaAuth = useViaAuthStore();
 
 const username = ref('dk0001');
 const password = ref('a123456');
