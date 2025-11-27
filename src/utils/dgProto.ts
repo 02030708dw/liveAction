@@ -333,6 +333,7 @@ export interface UiTableInfo {
     dealerImage: string;
     supportWeb: number;
     newGame: number;
+    roads: string[];
 }
 
 export interface UiDealerEvent {
@@ -388,7 +389,7 @@ export function buildUiTableData(
     if (!summary) return null;
 
     const state1002 = ps.tableStateById[tableId] || {};
-    const roads1004 = ps.roadsByTableId[tableId] || {};
+    const roads1004 = ps.roadsByTableId[tableId] || summary.roads || {};
     const bet208 = ps.betAreaByTableId[tableId] || {};
 
     const betInfo: UiBetInfo = {
@@ -425,6 +426,7 @@ export function buildUiTableData(
         dealerImage: summary.dealer ? summary.dealer.photo || '' : '',
         supportWeb: 1,
         newGame: 0,
+        roads: roads1004,
     };
 
     const dealerEvent: UiDealerEvent = {

@@ -352,7 +352,7 @@ export const useDgWsStore = defineStore('dgWs', {
                 }
 
                 case 1004:
-                    this.handleTableArrayLike(mapped, 'roadsByTableId');
+                    this.handleLobbyPush1004(mapped);
                     break;
 
                 case 201:
@@ -410,7 +410,9 @@ export const useDgWsStore = defineStore('dgWs', {
                         this.schedulePush();
                     }
                     break;
-
+                case 1005:
+                    console.log(tableId, mapped);
+                    break;
                 default:
                     break;
             }
@@ -428,7 +430,19 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             this.schedulePush();
         },
-
+        handleLobbyPush1004(mapped: any) {
+            const tid = mapped.tableId || mapped.tableID;
+            if (!tid) return;
+            if (Array.isArray(this.pushState.table)) {
+                const summary = (this.pushState.table as any[]).find(
+                    (x) => Number(x.tableId || x.tableID) === tid,
+                );
+                if (summary) {
+                    summary.roads = mapped.list;
+                }
+            }
+            this.pushState.roadsByTableId[tid] = mapped.list
+        },
         handleLobbyPush207(mapped: any) {
             const arr = Array.isArray(mapped.lobbyPush) ? mapped.lobbyPush : [];
             if (!arr.length || !Array.isArray(this.pushState.table)) return;
@@ -530,26 +544,12 @@ export const useDgWsStore = defineStore('dgWs', {
 
         /** 把聚合后的桌台信息推送给后端 `/ws/getTableInfos` */
         pushCombined() {
+            // 先用现有逻辑重建 UI（防御一下，确保 uiTables 是最新的）
+            this.rebuildUiTables();
+
             const payload = {
                 type: 'dgGameTableInfos',
-                data: {
-                    list: Array.isArray(this.pushState.list)
-                        ? this.pushState.list
-                        : [],
-                    table: Array.isArray(this.pushState.table)
-                        ? this.pushState.table
-                        : [],
-                    tableStateById: this.pushState.tableStateById,
-                    roadsByTableId: this.pushState.roadsByTableId,
-                    playersByTableId: this.pushState.playersByTableId,
-                    betAreaByTableId: this.pushState.betAreaByTableId,
-                    statsByTableId: this.pushState.statsByTableId,
-                    chatByTableId: this.pushState.chatByTableId,
-                    eventsByTableId: this.pushState.eventsByTableId,
-                    betResultByTableId: this.pushState.betResultByTableId,
-                    richList: this.pushState.richList,
-                    openCardByTableId: this.pushState.openCardByTableId,
-                },
+                data: this.uiTables, // ⭐ 直接推轻量的 UiTable 视图
             };
 
             const text = JSON.stringify(payload);
@@ -560,9 +560,8 @@ export const useDgWsStore = defineStore('dgWs', {
                 pushQueue.push(text);
             }
 
-            this.log('📤 推送WS 已发送合并 dgGameTableInfos');
+            this.log('📤 推送WS 已发送合并 dgGameTableInfos（使用 UiTable 轻量结构）');
         },
-
         // dgWs.ts
         buildBetList(params: {
             tableId: number;

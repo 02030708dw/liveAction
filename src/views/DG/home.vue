@@ -169,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useAuthStore } from '@/stores/dgAuth';
 import { useDgWsStore } from '@/stores/dgWs';
 import DgTables from './components/DgTables.vue';
@@ -209,6 +209,7 @@ const wskeyOut = computed(
     (authStore.wskey ? `✅ 已保存的 wskey：\n\n${authStore.wskey}` : '（等待）'),
 );
 
+// ======== 原来的手动按钮逻辑，保留 ========
 const onLogin = async () => {
   try {
     await authStore.login(username.value.trim(), password.value);
@@ -242,8 +243,69 @@ const onWsKey = async () => {
   }
 };
 
+// ======== 新增：自动化流程 ========
+
+// 防止重复并发执行
+const autoRunning = ref(false);
+
+// 封装 ①②③ + connect 的全流程
+const runAutoFlow = async () => {
+  if (autoRunning.value) return;
+  autoRunning.value = true;
+
+  try {
+    // ① 登录
+    await authStore.login(username.value.trim(), password.value);
+
+    // ② enterGame
+    await authStore.enterGame({
+      code: eg_code.value,
+      gamerCode: eg_gamer.value,
+      providerCode: eg_provider.value,
+      live: eg_live.value === 'true',
+      html: eg_html.value === 'true',
+    });
+
+    // ③ 获取 wskey
+    await authStore.fetchWsKey(bundleUrl.value.trim());
+
+    // 用最新的 auth 信息初始化 WS 配置
+    wsStore.initFromAuth();
+    wsStore.wskey = authStore.wskey;
+
+    // ④ 连接游戏 WS（里面会顺带连推送 WS + 发送初始化序列）
+    wsStore.connect();
+  } catch (e: any) {
+    console.error('自动流程失败:', e);
+    wsStore.log('❌ 自动流程失败: ' + (e?.message || e));
+  } finally {
+    autoRunning.value = false;
+  }
+};
+
+// 记录上一次的连接状态，用来判断是否 "从已连接 → 断开"
+let lastConnected = false;
+
 onMounted(() => {
+  // 先从 localStorage 恢复数据
   authStore.loadFromLocal();
   wsStore.initFromAuth();
+
+  // 进页面自动跑一遍 ①②③ + connect
+  runAutoFlow();
+
+  // 监听连接状态，如果从 true -> false 说明断线了，重新跑自动流程
+  watch(
+    () => wsStore.connected,
+    (val) => {
+      if (lastConnected && !val) {
+        // 上一次是 true，现在变成 false -> 断线重连
+        wsStore.log('🔁 检测到断线，重新跑自动流程（登录 + enterGame + wskey + connect）');
+        runAutoFlow();
+      }
+      lastConnected = val;
+    },
+    { immediate: true },
+  );
 });
 </script>
