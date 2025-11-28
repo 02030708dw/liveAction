@@ -186,7 +186,7 @@ export const useWmWsStore = defineStore("wmWs", {
                 }
 
                 const payload = {
-                    type: "wmGame101GroupInfo",   // ⭐ 你那边按这个 type 收就行
+                    type: "wmGameTableInfos",   // ⭐ 你那边按这个 type 收就行
                     data: this.game101GroupInfo,
                 };
 
