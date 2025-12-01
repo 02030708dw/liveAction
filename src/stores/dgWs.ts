@@ -27,6 +27,9 @@ interface State {
     countdownTimer: number | null;
     /** 10086.list[0]，下注加密用 */
     random: string;
+    /** 下注相关 */
+    userName: string;
+    betEncryptKey: string;
 }
 
 /** ================= 推送给后端的 WS 配置 ================= */
@@ -102,6 +105,8 @@ export const useDgWsStore = defineStore('dgWs', {
         heartbeatTimer: null,
         countdownTimer: null,
         random: '',
+        userName: '',
+        betEncryptKey: '',
     }),
     actions: {
         initFromAuth() {
@@ -183,7 +188,7 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             const buf = this.buildPacket(cmd, extra);
             this.ws.send(buf);
-            this.log(`📤 已发送 cmd=${cmd}`);
+            // this.log(`📤 已发送 cmd=${cmd}`);
             if (cmd === 6) {
                 console.log('buf', buf);
 
@@ -204,7 +209,7 @@ export const useDgWsStore = defineStore('dgWs', {
                 for (const pkt of seq) {
                     const buf = this.buildPacket(pkt.cmd, pkt);
                     this.ws?.send(buf);
-                    this.log(`📤 已发送 cmd=${pkt.cmd}`);
+                    // this.log(`📤 已发送 cmd=${pkt.cmd}`);
                     await new Promise((r) => setTimeout(r, 300));
                 }
                 this.log('✅ 初始化完成');
@@ -293,7 +298,7 @@ export const useDgWsStore = defineStore('dgWs', {
                     this._handleDecoded(new Uint8Array(arrBuf));
                 }
             } catch (err: any) {
-                this.log('📩 解码失败: ' + err?.message);
+                // this.log('📩 解码失败: ' + err?.message);
             }
         },
 
@@ -309,11 +314,31 @@ export const useDgWsStore = defineStore('dgWs', {
                     this.pushState.list = Array.isArray(mapped.list)
                         ? mapped.list
                         : [];
-                    // ⭐ 根据协议：10086 中 list[0] 就是 t.random
-                    if (Array.isArray(mapped.list) && mapped.list.length > 0) {
-                        this.random = String(mapped.list[0] ?? '');
-                        this.log(`🎲 收到 random: ${this.random}`);
+
+                    // 1) 提取 userName：优先用 mapped.userName，拿不到再从 loginResp 兜底
+                    if (mapped.userName) {
+                        this.userName = mapped.userName;
+                    } else {
+                        const authStore = useAuthStore();
+                        this.userName = authStore.userName || '';
                     }
+
+                    // 2) 提取下注专用 key：参照 Android 的 normalizedEntries 逻辑
+                    const entries = (this.pushState.list || [])
+                        .map((x: any) => (x == null ? '' : String(x)))
+                        .filter((s: string) => s.length > 0);
+
+                    if (entries.length > 1) {
+                        this.betEncryptKey = entries[1]!;
+                    } else if (entries.length === 1) {
+                        this.betEncryptKey = entries[0]!;
+                    }
+
+                    this.log(
+                        `🎲 cmd=10086 userName=${this.userName} betEncryptKey=${this.betEncryptKey} list=${JSON.stringify(
+                            this.pushState.list,
+                        )}`,
+                    );
 
                     this.schedulePush();
                     break;
@@ -417,7 +442,7 @@ export const useDgWsStore = defineStore('dgWs', {
                     break;
             }
 
-            this.log('📩 收到: ' + JSON.stringify(mapped));
+            // this.log('📩 收到: ' + JSON.stringify(mapped));
         },
 
         handleTableArrayLike(mapped: any, field: keyof PushState) {
@@ -499,12 +524,12 @@ export const useDgWsStore = defineStore('dgWs', {
         /** 连接推送给后端的 WS */
         connectPushWS() {
             const url = PUSH_WS_URL;
-            this.log(`[PUSH] 连接到: ${url}`);
+            // this.log(`[PUSH] 连接到: ${url}`);
 
             wsPush = new WebSocket(url);
 
             wsPush.onopen = () => {
-                this.log('✅ 推送WS 已连接');
+                // this.log('✅ 推送WS 已连接');
                 // 把排队的消息发出去
                 if (pushQueue.length && wsPush) {
                     pushQueue.forEach((msg) => wsPush!.send(msg));
@@ -513,9 +538,9 @@ export const useDgWsStore = defineStore('dgWs', {
             };
 
             wsPush.onclose = (e) => {
-                this.log(
-                    `🔌 推送WS 连接关闭 code=${e.code} reason=${e.reason || ''}`,
-                );
+                // this.log(
+                //     `🔌 推送WS 连接关闭 code=${e.code} reason=${e.reason || ''}`,
+                // );
                 wsPush = null;
 
                 // 简单重连逻辑
@@ -529,7 +554,7 @@ export const useDgWsStore = defineStore('dgWs', {
             };
 
             wsPush.onerror = () => {
-                this.log('❌ 推送WS 连接错误');
+                // this.log('❌ 推送WS 连接错误');
             };
         },
 
@@ -560,92 +585,56 @@ export const useDgWsStore = defineStore('dgWs', {
                 pushQueue.push(text);
             }
 
-            this.log('📤 推送WS 已发送合并 dgGameTableInfos（使用 UiTable 轻量结构）');
+            // this.log('📤 推送WS 已发送合并 dgGameTableInfos（使用 UiTable 轻量结构）');
         },
-        // dgWs.ts
-        buildBetList(params: {
+
+        enterRoom(tableId: number, gameNo: string) {
+            // Android 顺序：29 -> 9 -> 44 -> 19 -> 4
+            this.sendPacket(29, { tableId, type: 1 });
+            this.sendPacket(9, { tableId, gameNo });
+            this.sendPacket(44, { tableId, mid: '0' });
+            this.sendPacket(19, { tableId, type: 1 });
+            this.sendPacket(4, { tableId, type: 1, seat: -1 });
+        },
+        encryptWithKey(str: string, keyStr: string): string {
+            const key = CryptoJS.enc.Utf8.parse(keyStr.trim());
+            const enc = CryptoJS.TripleDES.encrypt(str, key, {
+                mode: CryptoJS.mode.ECB,
+                padding: CryptoJS.pad.Pkcs7,
+            });
+            return enc.toString();
+        },
+        // 转成 Android 的 key 规范：首字母小写
+        normalizeBetKey(source: string): string {
+            if (!source) return source;
+            if (source.length === 1) return source.toLowerCase();
+            return source[0]!.toLowerCase() + source.slice(1);
+        },
+
+        // 只下注一个区域的 betData（方便你先跑通）
+        buildSingleBetData(params: {
+            key: string;       // 比如 "P", "Banker", "Tie"
+            amount: number;    // 金额
+            table: string;     // info.table, Android 是 "3"
+            roadType: string;  // info.roadType，Android 用 table.seat
+        }): any {
+            const betData: any = {};
+            const normKey = this.normalizeBetKey(params.key.trim());
+            if (!normKey || !params.amount || params.amount <= 0) {
+                throw new Error('无效的下注 key 或 amount');
+            }
+            betData[normKey] = params.amount;
+            betData.info = JSON.stringify({
+                table: params.table,
+                roadType: params.roadType,
+            });
+            return betData;
+        },
+        /** 低层：和 Android DgWsService.send6Bet 的协议完全一样 */
+        sendDgBet(params: {
             tableId: number;
             gameNo: string;
-            roadType: number;   // cmd=43 时 object.type
-            tableIndex: number; // info.table
-            player: number;     // e.player，例：100
-            limitId?: number;   // 默认 1
-        }): string[] {
-            const { tableId, gameNo, roadType, tableIndex, player, limitId = 1 } = params;
-
-            if (!this.random) {
-                throw new Error('random 为空，请确认已收到 cmd=10086');
-            }
-
-            const authStore = useAuthStore();
-            const playerName: string = authStore.userName || ''
-            if (!playerName) {
-                throw new Error('未找到 playerName，请从 loginResp.resultSet 里确认字段名');
-            }
-
-            const random = this.random;
-            const randomSlice = random.slice(16);
-            const limitStr = String(limitId);
-
-            const eObj = {
-                player, // 例如 player=100 表示闲家
-                info: JSON.stringify({
-                    roadType,
-                    table: tableIndex,
-                }),
-            };
-
-            // t.encrypt(JSON.stringify(e))
-            const key = CryptoJS.enc.Utf8.parse(random);
-            const enc = CryptoJS.TripleDES.encrypt(
-                JSON.stringify(eObj),
-                key,
-                {
-                    mode: CryptoJS.mode.ECB,
-                    padding: CryptoJS.pad.Pkcs7,
-                },
-            ).toString();
-
-            // demo 原始数组（方便理解，不直接发）
-            const demo = [
-                tableId,
-                gameNo,
-                playerName,
-                randomSlice,
-                limitStr,
-                enc,
-                this.token, // 这里就是你当前用的 token（gameToken 或 accessToken）
-                1,
-            ];
-
-            const strKey =
-                String(demo[0]) +
-                String(demo[1]) +
-                String(demo[2]) +
-                String(demo[3]);
-
-            const md5 = CryptoJS.MD5(strKey).toString();
-
-            // 真实发送使用的 list
-            const list0 = limitStr; // "1"
-            const list1 = md5;      // md5(strKey)
-            const list2 = enc;      // t.encrypt(JSON.stringify(e))
-
-            this.log(
-                `🧮 buildBetList: tableId=${tableId}, gameNo=${gameNo}, playerName=${playerName}, roadType=${roadType}, table=${tableIndex}, player=${player}, md5=${md5}`,
-            );
-
-            return [list0, list1, list2];
-        },
-        /** 使用加密规则构建 list 并发送 cmd=6 下注 */
-        placeBetWithEncrypt(params: {
-            tableId: number;
-            gameNo: string;
-            roadType: number;
-            tableIndex: number;
-            player: number;     // e.player
-            limitId?: number;   // 默认 1
-            type?: number;      // 默认 1
+            betData: any;
         }) {
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                 this.log('❌ WS 未连接，无法投注');
@@ -653,30 +642,75 @@ export const useDgWsStore = defineStore('dgWs', {
                 return;
             }
 
-            const { tableId, gameNo, roadType, tableIndex, player, limitId, type = 1 } = params;
+            const { tableId, gameNo, betData } = params;
 
-            const list = this.buildBetList({
-                tableId,
-                gameNo,
-                roadType,
-                tableIndex,
-                player,
-                limitId,
-            });
+            const userName = this.userName;
+            if (!userName) {
+                throw new Error('userName 为空，请确认已收到 cmd=10086');
+            }
 
-            // cmd=6，extra 里只要带业务字段
+            const betKey = this.betEncryptKey;
+            if (!betKey) {
+                throw new Error('betEncryptKey 为空，请确认已收到 cmd=10086');
+            }
+
+            // suffixKey = betKey[8:16]，和 Android 保持一致
+            const keyLen = betKey.length;
+            const suffixKey =
+                keyLen > 8 ? betKey.slice(8, Math.min(16, keyLen)) : betKey;
+
+            const hashInput = String(tableId) + gameNo + userName + suffixKey;
+            const md5 = CryptoJS.MD5(hashInput).toString();
+
+            const encBetData = this.encryptWithKey(
+                JSON.stringify(betData),
+                betKey,
+            );
+
+            const list = ['1', md5, encBetData];
+
+            this.log(
+                `🧮 sendDgBet: tableId=${tableId}, gameNo=${gameNo}, userName=${userName}, suffixKey=${suffixKey}, md5=${md5}`,
+            );
+
             this.sendPacket(6, {
                 tableId,
                 gameNo,
-                type,
+                type: 1,
                 list,
             });
 
-            console.log(
-                `📤 发送下注 cmd=6, tableId=${tableId}, gameNo=${gameNo}, type=${type}, list=${JSON.stringify(
-                    list,
-                )}`,
+            this.log(
+                `📤 发送下注 cmd=6, payload.list=${JSON.stringify(list)}`,
             );
+        },
+        placeSingleBet(params: {
+            tableId: number;
+            gameNo: string;
+            betKey: string;       // 如 "P" / "Banker"
+            amount: number;
+            roadType: number;     // 你当前桌台的 roadType
+            tableIndex?: number;  // 可以先写死 '3'，后面再对上 Android
+        }) {
+            const tableStr = String(params.tableIndex ?? 3); // Android 现在写死 "3"
+            const roadTypeStr = String(params.roadType);
+
+            const betData = this.buildSingleBetData({
+                key: params.betKey,
+                amount: params.amount,
+                table: tableStr,
+                roadType: roadTypeStr,
+            });
+
+            // 先 enterRoom 再下注，和 Android 一致
+            this.enterRoom(params.tableId, params.gameNo);
+            setTimeout(() => {
+                this.sendDgBet({
+                    tableId: params.tableId,
+                    gameNo: params.gameNo,
+                    betData,
+                });
+            }, 2000)
         },
 
     },

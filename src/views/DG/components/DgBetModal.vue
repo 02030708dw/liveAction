@@ -160,15 +160,15 @@ const submitBet = () => {
     }
 
     try {
-        wsStore.placeBetWithEncrypt({
+        wsStore.placeSingleBet({
             tableId: idNum,
             gameNo: betGameNo.value,
+            betKey: "B",
+            amount: 10,
             roadType: betRoadType.value,
-            tableIndex: betTableIndex.value,
-            player: betPlayer.value,
-            limitId: betLimitId.value,
-            type: 1,
+            tableIndex: betTableIndex.value ?? 3,
         });
+
 
         emit('bet-success');
         emit('close');

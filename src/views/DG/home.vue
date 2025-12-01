@@ -177,7 +177,7 @@ import DgTables from './components/DgTables.vue';
 const authStore = useAuthStore();
 const wsStore = useDgWsStore();
 
-const username = ref('member19');
+const username = ref('member18');
 const password = ref('a123456');
 
 const eg_code = ref('1');
