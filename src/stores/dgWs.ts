@@ -537,7 +537,7 @@ export const useDgWsStore = defineStore('dgWs', {
                 }
             };
 
-            wsPush.onclose = (e) => {
+            wsPush.onclose = () => {
                 // this.log(
                 //     `🔌 推送WS 连接关闭 code=${e.code} reason=${e.reason || ''}`,
                 // );
