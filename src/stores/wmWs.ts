@@ -73,17 +73,17 @@ export const useWmWsStore = defineStore("wmWs", {
         /** 自动流程：登录 + enterGame + 全链路 WS */
         async autoLoginAndConnect() {
             if (!this.lastUsername || !this.lastPassword) {
-                console.warn("没有 lastUsername/lastPassword，无法自动登录");
+                // console.warn("没有 lastUsername/lastPassword，无法自动登录");
                 return;
             }
 
             try {
-                console.log("[WM] autoLoginAndConnect 开始");
+                // console.log("[WM] autoLoginAndConnect 开始");
                 await this.httpLogin(this.lastUsername, this.lastPassword);
                 await this.enterGameAndConnect();
-                console.log("[WM] autoLoginAndConnect 成功");
+                // console.log("[WM] autoLoginAndConnect 成功");
             } catch (e) {
-                console.error("[WM] autoLoginAndConnect 失败，将重试", e);
+                // console.error("[WM] autoLoginAndConnect 失败，将重试", e);
                 this.scheduleReconnect();
             }
         },
@@ -287,9 +287,9 @@ export const useWmWsStore = defineStore("wmWs", {
                         const game101 = data.gameArr?.find((g) => g.gameID === 101);
                         if (game101 && Array.isArray(game101.groupArr)) {
                             this.game101GroupInfo = game101.groupArr;
-                            console.log("已保存 gameID=101 的 groupArr 数组:", this.game101GroupInfo);
+                            // console.log("已保存 gameID=101 的 groupArr 数组:", this.game101GroupInfo);
                         } else {
-                            console.warn("protocol=35 中未找到 gameID=101 的 gameArr 或 groupArr 不是数组");
+                            // console.warn("protocol=35 中未找到 gameID=101 的 gameArr 或 groupArr 不是数组");
                         }
 
                         // 2）继续推给 phpclient（如果你还需要）
@@ -300,9 +300,9 @@ export const useWmWsStore = defineStore("wmWs", {
 
                         if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) {
                             this.phpClientSocket.send(JSON.stringify(payload));
-                            console.log("已将 protocol=35 data 推给 phpclient");
+                            // console.log("已将 protocol=35 data 推给 phpclient");
                         } else {
-                            console.warn("phpclient WS 未连接，无法推 wmGameTableInfos（protocol=35 data）");
+                            // console.warn("phpclient WS 未连接，无法推 wmGameTableInfos（protocol=35 data）");
                         }
                     } else {
                         // 其他协议按需再处理
@@ -445,7 +445,7 @@ export const useWmWsStore = defineStore("wmWs", {
 
                     // 修改该桌子的 gameStage（Pinia 里直接改属性是响应式的）
                     target.gameStage = d.gameStage;
-                    console.log("protocol=20 更新桌面 gameStage 成功:", d.groupID, "=>", d.gameStage);
+                    // console.log("protocol=20 更新桌面 gameStage 成功:", d.groupID, "=>", d.gameStage);
                     break;
                 }
                 case 21: {
@@ -485,7 +485,7 @@ export const useWmWsStore = defineStore("wmWs", {
 
                     this.game101GroupInfo.splice(idx, 1, newItem);
 
-                    console.log("protocol=21 更新新牌局信息成功:", d.groupID, d);
+                    // console.log("protocol=21 更新新牌局信息成功:", d.groupID, d);
                     break;
                 }
 
@@ -527,7 +527,7 @@ export const useWmWsStore = defineStore("wmWs", {
                         inputType: d.inputType,
                     };
 
-                    console.log("protocol=24 发牌推送，更新 dtCard:", d.groupID, target.dtCard);
+                    console.log("protocol=24 发牌推送，更新 dtCard:", msg.data, d.groupID, JSON.stringify(target.dtCard));
                     break;
                 }
 
@@ -568,11 +568,11 @@ export const useWmWsStore = defineStore("wmWs", {
                         target.winBetAreaArr = d.winBetAreaArr;
                     }
 
-                    console.log("protocol=25 结算结果，更新桌面:", d.groupID, {
-                        result: target.result,
-                        dtCard: target.dtCard,
-                        winBetAreaArr: target.winBetAreaArr,
-                    });
+                    // console.log("protocol=25 结算结果，更新桌面:", d.groupID, {
+                    //     result: target.result,
+                    //     dtCard: target.dtCard,
+                    //     winBetAreaArr: target.winBetAreaArr,
+                    // });
                     break;
                 }
                 case 26: {
@@ -607,10 +607,10 @@ export const useWmWsStore = defineStore("wmWs", {
                     target.historyArr = d.historyArr;
                     (target as any).historyData = d.historyData;
 
-                    console.log("protocol=26 历史路单刷新:", d.groupID, {
-                        historyLen: d.historyArr?.length,
-                        totalCount: d.historyData?.totalCount,
-                    });
+                    // console.log("protocol=26 历史路单刷新:", d.groupID, {
+                    //     historyLen: d.historyArr?.length,
+                    //     totalCount: d.historyData?.totalCount,
+                    // });
                     break;
                 }
 
@@ -647,7 +647,7 @@ export const useWmWsStore = defineStore("wmWs", {
                     // 直接整包替换实时下注数据
                     target.dtNowBet = d.dtNowBet;
 
-                    console.log("protocol=33 实时下注广播，更新 dtNowBet:", d.groupID, d.dtNowBet);
+                    // console.log("protocol=33 实时下注广播，更新 dtNowBet:", d.groupID, d.dtNowBet);
                     break;
                 }
 
@@ -682,10 +682,10 @@ export const useWmWsStore = defineStore("wmWs", {
                     target.betTimeContent = d.betTimeContent;
                     target.timeMillisecond = d.timeMillisecond;
 
-                    console.log("protocol=38 倒计时刷新:", d.groupID, {
-                        betTimeCount: target.betTimeCount,
-                        timeMillisecond: target.timeMillisecond,
-                    });
+                    // console.log("protocol=38 倒计时刷新:", d.groupID, {
+                    //     betTimeCount: target.betTimeCount,
+                    //     timeMillisecond: target.timeMillisecond,
+                    // });
                     break;
                 }
 

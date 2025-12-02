@@ -347,6 +347,10 @@ export interface UiDealerEvent {
     roundStartTime: number;
     shuffle: number;
     timestamp: number;
+
+    // 新增，给 AIA 用的原始倒计时参数
+    countdownBase?: number;       // 下注总秒数
+    countdownLastUpdate?: number; // 当时的本地时间戳(ms)
 }
 
 export interface UiRoadInfo {
@@ -431,7 +435,7 @@ export function buildUiTableData(
 
     const dealerEvent: UiDealerEvent = {
         dealerId: tableInfo.dealerID,
-        deliverTime: Date.now(),
+        deliverTime: cdInfo?.lastUpdate || Date.now(),
         eventType:
             state1002.state === 1
                 ? 'GP_BETTING'
@@ -444,9 +448,12 @@ export function buildUiTableData(
         gameRound,
         gameShoe,
         iTime: cdRemain,
-        roundStartTime: Date.now(),
+        roundStartTime: cdInfo?.lastUpdate || Date.now(),
         shuffle: 0,
         timestamp: Date.now(),
+        // 新增，给 AIA 用的原始倒计时参数
+        countdownBase: cdInfo?.base || 0,
+        countdownLastUpdate: cdInfo?.lastUpdate || 0,
     };
 
     const roadInfo: UiRoadInfo = {
