@@ -47,6 +47,10 @@ export const useWmWsStore = defineStore("wmWs", {
         game101GroupInfo: [] as WmGroupInfo[],
         /** 15101 protocol=30 最新余额数据 */
         balanceData: null as WmGameBalanceData | null,
+        betSerialNumber: 1 as number,  // 每次下注自增，用于 betSerialNumber
+
+        /** 已经发送过进房间(协议 10) 的 groupID 列表，避免重复发 */
+        joinedGroupID: 0 as number,
     }),
 
     getters: {
@@ -138,7 +142,7 @@ export const useWmWsStore = defineStore("wmWs", {
         },
 
         /** 连接 phpclient WS：wss://phpclienta.nakiph.xyz/ws/getTableInfos */
-        /** 连接 phpclient WS：wss://phpclienta.nakiph.xyz/ws/getTableInfos */
+
         connectPhpClient() {
             if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) {
                 return;
@@ -165,7 +169,10 @@ export const useWmWsStore = defineStore("wmWs", {
                 console.log("phpclient WS 已关闭");
                 // ⭐ 断开时停止推送
                 this.stopPhpPushLoop();
-                this.handleWsClosed("phpclient");
+                // ✅ 只重连 phpclient 自己，别去动整条链路
+                if (this.autoMode) {
+                    this.connectPhpClient();
+                }
             };
         },
 
@@ -490,8 +497,13 @@ export const useWmWsStore = defineStore("wmWs", {
                 }
 
 
-                case 23://下注成功返回
-                    break
+                case 23: {
+                    // 下注成功/失败返回，这里先简单打印
+                    const d = msg.data;
+                    console.log("protocol=23 下注返回:", d);
+
+                    break;
+                }
                 case 24: {
                     // 发牌推送
                     const d = msg.data as {
@@ -527,7 +539,7 @@ export const useWmWsStore = defineStore("wmWs", {
                         inputType: d.inputType,
                     };
 
-                    console.log("protocol=24 发牌推送，更新 dtCard:", msg.data, d.groupID, JSON.stringify(target.dtCard));
+                    // console.log("protocol=24 发牌推送，更新 dtCard:", msg.data, d.groupID, JSON.stringify(target.dtCard));
                     break;
                 }
 
@@ -681,7 +693,8 @@ export const useWmWsStore = defineStore("wmWs", {
                     target.betTimeCount = d.betTimeCount;
                     target.betTimeContent = d.betTimeContent;
                     target.timeMillisecond = d.timeMillisecond;
-
+                    // ⭐ 新增：记录“本地收到这次 38 的时间戳”
+                    target.betTimeReceivedAt = Date.now();
                     // console.log("protocol=38 倒计时刷新:", d.groupID, {
                     //     betTimeCount: target.betTimeCount,
                     //     timeMillisecond: target.timeMillisecond,
@@ -699,7 +712,7 @@ export const useWmWsStore = defineStore("wmWs", {
         },
 
         /** 任意 WS 关闭时统一处理（自动模式下发起重连） */
-        handleWsClosed(which: "hall" | "game" | "phpclient") {
+        handleWsClosed(which: "hall" | "game") {
             console.log(`[WM] WS closed: ${which}`);
             if (!this.autoMode) return;
 
@@ -739,5 +752,86 @@ export const useWmWsStore = defineStore("wmWs", {
             this.stopPhpPushLoop();
             this.clientAndGameConnected = false;
         },
+        /** 向 15101 发送进房间请求（protocol = 10） */
+        enterGroup(groupID: number) {
+            if (!this.gameSocket || this.gameSocket.readyState !== WebSocket.OPEN) {
+                console.warn("[WM] 15101 未连接，无法进房间");
+                return;
+            }
+            if (!this.dtBetLimitSelectID) {
+                console.warn("[WM] 没有 dtBetLimitSelectID，无法进房间");
+                return;
+            }
+
+            // 已经进过这个房间就不用再发
+            if (this.joinedGroupID == groupID) {
+                return;
+            }
+
+            const body = {
+                protocol: 10,
+                data: {
+                    dtBetLimitSelectID: this.dtBetLimitSelectID,
+                    groupID,
+                },
+            };
+
+            console.log("[WM] 发送进房间请求:", body);
+
+            try {
+                this.gameSocket.send(JSON.stringify(body));
+                this.joinedGroupID = groupID;
+            } catch (e) {
+                console.error("[WM] 发送进房间失败:", e);
+            }
+        },
+
+        /** 下注（发到 15101） */
+        /** 向 15101 发送下注请求（protocol=22） */
+        /** 向 15101 发送下注请求（protocol = 22） */
+        placeBet(params: {
+            groupID: number; // 桌号
+            gameNo: number;
+            gameNoRound: number;
+            betArr: { betArea: number; addBetMoney: number }[];
+            commission?: number;
+        }) {
+            if (!this.gameSocket || this.gameSocket.readyState !== WebSocket.OPEN) {
+                console.warn("[WM] 15101 未连接，无法下注");
+                return;
+            }
+
+            const { groupID, gameNo, gameNoRound, betArr, commission = 0 } = params;
+
+            if (!betArr || betArr.length === 0) {
+                console.warn("[WM] betArr 为空，忽略下注");
+                return;
+            }
+
+            // ⭐ 下注前先进房间（只会对每个 groupID 发一次 protocol=10）
+            this.enterGroup(groupID);
+
+            // 自增流水号
+            const sn = this.betSerialNumber++;
+
+            const body = {
+                protocol: 22,
+                data: {
+                    betSerialNumber: sn,
+                    gameNo,
+                    gameNoRound,  // 不要 +1，用当前局号
+                    betArr,
+                    commission,
+                },
+            };
+
+            console.log("[WM] 发送下注:", body);
+            try {
+                this.gameSocket.send(JSON.stringify(body));
+            } catch (e) {
+                console.error("[WM] 发送下注失败:", e);
+            }
+        }
+
     },
 });

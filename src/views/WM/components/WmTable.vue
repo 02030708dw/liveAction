@@ -103,19 +103,24 @@
                             新局开始 / {{ getStageText(table) }}
                         </button>
                         <button
-                            class="px-4 py-1 rounded-full text-[12px] bg-emerald-600 text-white font-semibold hover:bg-emerald-500 transition">
+                            class="px-4 py-1 rounded-full text-[12px] bg-emerald-600 text-white font-semibold hover:bg-emerald-500 transition"
+                            @click="openBetModal(table)">
                             投注
                         </button>
                     </div>
                 </footer>
             </article>
         </div>
+
+        <!-- 统一的 WM 投注弹窗 -->
+        <WmBetModal v-model:show="betModalVisible" :group="currentGroup" @bet-success="handleBetSuccess" />
     </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import type { WmGroupInfo, WmGameBalanceData } from '@/types/wm/ws';
+import WmBetModal from './WmBetModal.vue';
 
 const props = defineProps<{
     tables: WmGroupInfo[];
@@ -124,14 +129,43 @@ const props = defineProps<{
 
 const balanceData = computed(() => props.balanceData ?? null);
 
+// ========== 投注弹窗相关 ==========
+const betModalVisible = ref(false);
+const currentGroup = ref<WmGroupInfo | null>(null);
+
+const openBetModal = (table: WmGroupInfo) => {
+    currentGroup.value = table;
+    betModalVisible.value = true;
+};
+
+const handleBetSuccess = () => {
+    // 这里你可以接入自己的 toast 提示
+    console.log('[WM] 已发送下注请求，等待 23 回包');
+};
+
+// ========== 原有工具函数 ==========
 const hasHistory = (table: WmGroupInfo) =>
     Array.isArray(table.historyArr) && table.historyArr.length > 0;
 
 const getCountdownSec = (table: WmGroupInfo) => {
-    const ms = table.timeMillisecond ?? 0;
-    const sec = Math.floor(ms / 1000);
-    return sec > 0 ? sec : 0;
+    const baseMs = table.timeMillisecond ?? 0; // 原始剩余毫秒
+    if (!baseMs || baseMs <= 0) return 0;
+
+    const recvAt = (table as any).betTimeReceivedAt as number | undefined;
+    if (!recvAt) {
+        // 没记录本地时间，就按原始值直接显示
+        const sec = Math.floor(baseMs / 1000);
+        return sec > 0 ? sec : 0;
+    }
+
+    // 计算从收到包到现在过去了多久
+    const passed = now.value - recvAt;
+    const leftMs = baseMs - passed;
+
+    const leftSec = Math.ceil(leftMs / 1000);
+    return leftSec > 0 ? leftSec : 0;
 };
+
 
 const getStageText = (table: WmGroupInfo) => {
     switch (table.gameStage) {
@@ -159,4 +193,20 @@ const getTotalPlayerCount = (table: WmGroupInfo) => {
         0,
     );
 };
+
+const now = ref(Date.now());
+let nowTimer: number | null = null;
+
+onMounted(() => {
+    nowTimer = window.setInterval(() => {
+        now.value = Date.now();
+    }, 200) as unknown as number;
+});
+
+onUnmounted(() => {
+    if (nowTimer !== null) {
+        window.clearInterval(nowTimer);
+        nowTimer = null;
+    }
+});
 </script>

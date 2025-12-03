@@ -147,6 +147,7 @@ export interface WmGroupInfo {
 
     /** 实时下注广播（protocol 33） */
     dtNowBet?: WmDtNowBet;
+    betTimeReceivedAt: number;// ⭐ 本地收到这次 dtNowBet 的时间戳，用于计算延迟
 }
 
 /** 15109 - protocol=35 中 gameArr 的单项 */
