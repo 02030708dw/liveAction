@@ -136,7 +136,7 @@ export const useDgWsStore = defineStore('dgWs', {
             this.logs.push(msg);
             if (this.logs.length > 200) this.logs.shift();
             // 也顺便打到控制台
-            // console.log(msg);
+            console.log(msg);
         },
 
         getEncryptToken(str: string): string {

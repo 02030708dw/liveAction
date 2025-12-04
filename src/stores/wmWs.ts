@@ -1,5 +1,5 @@
 // src/stores/wmWs.ts
-import { defineStore } from "pinia";
+import { defineStore, acceptHMRUpdate } from "pinia";
 import { useAuthStore } from "@/stores/auth";
 import type {
     WmDtBetLimitSelectID,
@@ -51,6 +51,8 @@ export const useWmWsStore = defineStore("wmWs", {
 
         /** 已经发送过进房间(协议 10) 的 groupID 列表，避免重复发 */
         joinedGroupID: 0 as number,
+        //开发期静音
+        hmrSilence: false as boolean,
     }),
 
     getters: {
@@ -89,6 +91,7 @@ export const useWmWsStore = defineStore("wmWs", {
             } catch (e) {
                 // console.error("[WM] autoLoginAndConnect 失败，将重试", e);
                 this.scheduleReconnect();
+                console.error("[WM] autoLoginAndConnect 失败：", e);
             }
         },
 
@@ -170,9 +173,9 @@ export const useWmWsStore = defineStore("wmWs", {
                 // ⭐ 断开时停止推送
                 this.stopPhpPushLoop();
                 // ✅ 只重连 phpclient 自己，别去动整条链路
-                if (this.autoMode) {
-                    this.connectPhpClient();
-                }
+                // if (this.autoMode) {
+                //     this.connectPhpClient();
+                // }
             };
         },
 
@@ -488,6 +491,7 @@ export const useWmWsStore = defineStore("wmWs", {
                                 ...d.tableDtExtend,
                             }
                             : oldItem.tableDtExtend,
+                        // betTimeReceivedAt: Date.now(), // ⭐ 新牌局开始时记录时间戳
                     };
 
                     this.game101GroupInfo.splice(idx, 1, newItem);
@@ -617,7 +621,7 @@ export const useWmWsStore = defineStore("wmWs", {
 
                     // 整包覆盖历史路单
                     target.historyArr = d.historyArr;
-                    (target as any).historyData = d.historyData;
+                    target.historyData = d.historyData;
 
                     // console.log("protocol=26 历史路单刷新:", d.groupID, {
                     //     historyLen: d.historyArr?.length,
@@ -713,6 +717,7 @@ export const useWmWsStore = defineStore("wmWs", {
 
         /** 任意 WS 关闭时统一处理（自动模式下发起重连） */
         handleWsClosed(which: "hall" | "game") {
+            if (this.hmrSilence) return;      // 🔇 HMR 期间不重连
             console.log(`[WM] WS closed: ${which}`);
             if (!this.autoMode) return;
 
@@ -835,3 +840,23 @@ export const useWmWsStore = defineStore("wmWs", {
 
     },
 });
+if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+        const s = useWmWsStore();
+        s.hmrSilence = true;     // 🔇 标记：onclose 期间不重连
+        try {
+            s.hallSocket?.close();
+            s.clientSocket?.close();
+            s.gameSocket?.close();
+            s.phpClientSocket?.close();
+        } finally {
+            // 不在这里清掉标记，等新模块接管后再清
+        }
+    });
+    console.log(123);
+
+    import.meta.hot.accept(() => {
+        const s = useWmWsStore();
+        s.hmrSilence = false;    // 解除静音，恢复正常重连行为
+    });
+}
