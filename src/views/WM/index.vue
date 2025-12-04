@@ -72,7 +72,7 @@ const {
   balanceData,
 } = storeToRefs(wmWsStore);
 
-const username = ref('member11');
+const username = ref('member19');
 const password = ref('a123456');
 
 const tables = computed(() => game101GroupInfo.value ?? []);
