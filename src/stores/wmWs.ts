@@ -7,12 +7,79 @@ import type {
     WmHallLoginData,
     WmPhpClientPayload,
     WmHallInit35Data,
-    WmGroupInfo,
     WmGameBalanceData,
-    WmDtCard,
-    WmDtNowBet
+
 } from "@/types/wm/ws";
 
+/** ========= 精简桌面数据（仅后端需要） ========= */
+type WmLeanGroup = {
+    groupID: number;
+
+    // 桌态（保持和后端要求一致；与 gameStage 同值）
+    tableStatus?: number;
+    gameStage?: number;
+
+    // 限红（白名单）
+    tableDtExtend?: {
+        singleLimit?: number;
+        tableMinBet?: number;
+        [k: string]: any;
+    };
+
+    // 局号
+    gameNo?: number;
+    gameNoRound?: number;
+
+    // 荷官
+    dealerID?: number | string;
+
+    // 倒计时
+    betTimeCount?: number;
+    betTimeContent?: Record<string, any>;
+    timeMillisecond?: number;
+    betTimeReceivedAt?: number;
+
+    // 在线人数
+    userCount?: number;
+
+    // 路单（仅 resultObjArr）
+    historyData?: { resultObjArr?: any[] };
+};
+
+// 将 WM 原始 group 投影成精简结构
+function toLeanGroup(raw: any): WmLeanGroup {
+    return {
+        groupID: raw.groupID,
+
+        tableStatus: raw.tableStatus,
+        gameStage: raw.gameStage,
+
+        tableDtExtend: raw.tableDtExtend
+            ? {
+                singleLimit: raw.tableDtExtend.singleLimit,
+                tableMinBet: raw.tableDtExtend.tableMinBet,
+            }
+            : undefined,
+
+        gameNo: raw.gameNo,
+        gameNoRound: raw.gameNoRound,
+
+        dealerID: raw.dealerID,
+
+        betTimeCount: raw.betTimeCount,
+        betTimeContent: raw.betTimeContent,
+        timeMillisecond: raw.timeMillisecond,
+        betTimeReceivedAt: raw.betTimeReceivedAt,
+
+        userCount: raw.onlinePeople ?? raw.userCount,
+
+        historyData: raw.historyData?.resultObjArr
+            ? { resultObjArr: raw.historyData.resultObjArr }
+            : undefined,
+    };
+}
+
+/** ================================================ */
 
 export const useWmWsStore = defineStore("wmWs", {
     state: () => ({
@@ -25,11 +92,16 @@ export const useWmWsStore = defineStore("wmWs", {
         clientSocket: null as WebSocket | null, // 15801
         gameSocket: null as WebSocket | null, // 15101
         phpClientSocket: null as WebSocket | null, // phpclient
-        phpPushTimer: null as number | null,       // ⭐ 每 200ms 推送 game101GroupInfo
+        phpPushTimer: null as number | null, // 固定 200ms 推送
 
         // 定时器
         hallHeartbeatTimer: null as number | null,
         reconnectTimer: null as number | null,
+
+        // phpclient 独立重连（指数退避）
+        phpClientReconnectTimer: null as number | null,
+        phpClientRetryMs: 1000 as number,
+        phpClientMaxRetryMs: 10000 as number,
 
         // 防重复连 15801 / 15101
         clientAndGameConnected: false,
@@ -43,15 +115,17 @@ export const useWmWsStore = defineStore("wmWs", {
         lastUsername: "" as string,
         lastPassword: "" as string,
 
-        /** 大厅 protocol=35 中，gameID=101 的 groupArr（房间初始化信息） */
-        game101GroupInfo: [] as WmGroupInfo[],
+        /** 仅保留后端需要的字段 */
+        game101GroupInfo: [] as WmLeanGroup[],
+
         /** 15101 protocol=30 最新余额数据 */
         balanceData: null as WmGameBalanceData | null,
-        betSerialNumber: 1 as number,  // 每次下注自增，用于 betSerialNumber
+        betSerialNumber: 1 as number, // 每次下注自增，用于 betSerialNumber
 
-        /** 已经发送过进房间(协议 10) 的 groupID 列表，避免重复发 */
+        /** 已经发送过进房间(协议 10) 的 groupID，避免重复发 */
         joinedGroupID: 0 as number,
-        //开发期静音
+
+        // 开发期静音（HMR 期间不重连）
         hmrSilence: false as boolean,
     }),
 
@@ -78,18 +152,12 @@ export const useWmWsStore = defineStore("wmWs", {
 
         /** 自动流程：登录 + enterGame + 全链路 WS */
         async autoLoginAndConnect() {
-            if (!this.lastUsername || !this.lastPassword) {
-                // console.warn("没有 lastUsername/lastPassword，无法自动登录");
-                return;
-            }
+            if (!this.lastUsername || !this.lastPassword) return;
 
             try {
-                // console.log("[WM] autoLoginAndConnect 开始");
                 await this.httpLogin(this.lastUsername, this.lastPassword);
                 await this.enterGameAndConnect();
-                // console.log("[WM] autoLoginAndConnect 成功");
             } catch (e) {
-                // console.error("[WM] autoLoginAndConnect 失败，将重试", e);
                 this.scheduleReconnect();
                 console.error("[WM] autoLoginAndConnect 失败：", e);
             }
@@ -145,14 +213,13 @@ export const useWmWsStore = defineStore("wmWs", {
         },
 
         /** 连接 phpclient WS：wss://phpclienta.nakiph.xyz/ws/getTableInfos */
-
         connectPhpClient() {
-            if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) {
-                return;
-            }
+            if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) return;
 
             if (this.phpClientSocket) {
-                this.phpClientSocket.close();
+                try {
+                    this.phpClientSocket.close();
+                } catch { }
             }
 
             const ws = new WebSocket("wss://phpclienta.nakiph.xyz/ws/getTableInfos");
@@ -160,7 +227,7 @@ export const useWmWsStore = defineStore("wmWs", {
 
             ws.onopen = () => {
                 console.log("phpclient WS 已连接");
-                // ⭐ 连接成功后开始循环推送 game101GroupInfo
+                this.clearPhpClientReconnect();
                 this.startPhpPushLoop();
             };
 
@@ -170,16 +237,36 @@ export const useWmWsStore = defineStore("wmWs", {
 
             ws.onclose = () => {
                 console.log("phpclient WS 已关闭");
-                // ⭐ 断开时停止推送
                 this.stopPhpPushLoop();
-                // ✅ 只重连 phpclient 自己，别去动整条链路
-                // if (this.autoMode) {
-                //     this.connectPhpClient();
-                // }
+                if (this.autoMode && !this.hmrSilence) {
+                    this.schedulePhpClientReconnect();
+                }
             };
         },
 
-        /** 启动每 200ms 向 phpclient 推送最新 game101GroupInfo 的循环 */
+        /** phpclient 指数退避重连 */
+        schedulePhpClientReconnect() {
+            if (!this.autoMode) return;
+            if (this.phpClientReconnectTimer !== null) return;
+
+            const delay = this.phpClientRetryMs;
+            console.log(`[phpclient] ${delay}ms 后尝试重连...`);
+            this.phpClientReconnectTimer = window.setTimeout(() => {
+                this.phpClientReconnectTimer = null;
+                this.phpClientRetryMs = Math.min(this.phpClientRetryMs * 2, this.phpClientMaxRetryMs);
+                this.connectPhpClient();
+            }, delay) as unknown as number;
+        },
+
+        clearPhpClientReconnect() {
+            if (this.phpClientReconnectTimer !== null) {
+                window.clearTimeout(this.phpClientReconnectTimer);
+                this.phpClientReconnectTimer = null;
+            }
+            this.phpClientRetryMs = 1000;
+        },
+
+        /** 固定 200ms 推送 */
         startPhpPushLoop() {
             if (this.phpPushTimer !== null) {
                 window.clearInterval(this.phpPushTimer);
@@ -187,28 +274,23 @@ export const useWmWsStore = defineStore("wmWs", {
             }
 
             this.phpPushTimer = window.setInterval(() => {
-                if (!this.phpClientSocket || this.phpClientSocket.readyState !== WebSocket.OPEN) {
-                    return;
-                }
+                if (!this.phpClientSocket || this.phpClientSocket.readyState !== WebSocket.OPEN) return;
+                if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) return;
 
-                if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                    return;
-                }
+                // ✅ 只推 tableStatus === 1 的桌子
+                const filtered = this.game101GroupInfo.filter(
+                    g => (g.tableStatus) === 1
+                );
+                if (filtered.length === 0) return;
 
-                const payload = {
-                    type: "wmGameTableInfos",   // ⭐ 你那边按这个 type 收就行
-                    data: this.game101GroupInfo,
-                };
-
-                try {
-                    this.phpClientSocket.send(JSON.stringify(payload));
-                } catch (err) {
-                    console.error("推送 game101GroupInfo 到 phpclient 失败:", err);
+                const payload = { type: "wmGameTableInfos", data: filtered };
+                try { this.phpClientSocket.send(JSON.stringify(payload)); } catch (err) {
+                    console.error("推送过滤后的 game101GroupInfo 失败:", err);
                 }
             }, 200) as unknown as number;
         },
 
-        /** 停止向 phpclient 推送 */
+        /** 停止推送 */
         stopPhpPushLoop() {
             if (this.phpPushTimer !== null) {
                 window.clearInterval(this.phpPushTimer);
@@ -235,38 +317,30 @@ export const useWmWsStore = defineStore("wmWs", {
             ws.onopen = () => {
                 console.log("大厅 15109 WS 已连接");
 
-                // 1）发送登录（protocol=1）
-                const loginBody = {
-                    protocol: 1,
-                    data: {
-                        sid: this.sid,
-                        dtBetLimitSelectID: {}, // 第一次登录传空对象
-                        bGroupList: false,
-                        videoName: "TC",
-                        videoDelay: 3000,
-                        userAgent: navigator.userAgent,
-                    },
-                };
-                ws.send(JSON.stringify(loginBody));
+                // 登录
+                ws.send(
+                    JSON.stringify({
+                        protocol: 1,
+                        data: {
+                            sid: this.sid,
+                            dtBetLimitSelectID: {},
+                            bGroupList: false,
+                            videoName: "TC",
+                            videoDelay: 3000,
+                            userAgent: navigator.userAgent,
+                        },
+                    }),
+                );
                 console.log("大厅 15109 已发送登录 protocol=1");
 
-                // 2）大厅初始化 protocol=35
-                const initBody = {
-                    protocol: 35,
-                    data: { type: -1 },
-                };
-                ws.send(JSON.stringify(initBody));
+                // 初始化
+                ws.send(JSON.stringify({ protocol: 35, data: { type: -1 } }));
                 console.log("大厅 15109 已发送初始化 protocol=35");
 
-                // 3）心跳 115
+                // 心跳 115（101）
                 const sendHeartbeat = () => {
                     if (ws.readyState === WebSocket.OPEN) {
-                        const hb = {
-                            protocol: 115,
-                            data: { gameID: 102 },
-                        };
-                        ws.send(JSON.stringify(hb));
-                        console.log("大厅 15109 心跳 protocol=115");
+                        ws.send(JSON.stringify({ protocol: 115, data: { gameID: 101 } }));
                     }
                 };
                 sendHeartbeat();
@@ -278,12 +352,9 @@ export const useWmWsStore = defineStore("wmWs", {
                     const msg = JSON.parse(event.data) as WmWsMessage;
 
                     if (msg.protocol === 0) {
-                        // 登录成功 / 初始数据包，里面有 dtBetLimitSelectID
                         const data = msg.data as WmHallLoginData;
                         if (data?.dtBetLimitSelectID) {
                             this.dtBetLimitSelectID = data.dtBetLimitSelectID;
-
-                            // 拿到限红后，如果还没连过 15801 / 15101，则立即拉起
                             if (!this.clientAndGameConnected) {
                                 this.connectClient();
                                 this.connectGame();
@@ -293,29 +364,34 @@ export const useWmWsStore = defineStore("wmWs", {
                     } else if (msg.protocol === 35) {
                         const data = msg.data as WmHallInit35Data;
 
-                        // 1）保存 gameID = 101 的所有 groupArr
+                        // 只取 101，并投影成精简结构
                         const game101 = data.gameArr?.find((g) => g.gameID === 101);
                         if (game101 && Array.isArray(game101.groupArr)) {
-                            this.game101GroupInfo = game101.groupArr;
-                            // console.log("已保存 gameID=101 的 groupArr 数组:", this.game101GroupInfo);
+                            this.game101GroupInfo = game101.groupArr.map((g: any) => {
+                                const lean = toLeanGroup(g);
+                                return {
+                                    ...lean,
+                                    betTimeReceivedAt: Date.now(),
+                                    userCount: g.onlinePeople ?? lean.userCount,
+                                };
+                            });
                         } else {
-                            // console.warn("protocol=35 中未找到 gameID=101 的 gameArr 或 groupArr 不是数组");
+                            this.game101GroupInfo = [];
                         }
 
-                        // 2）继续推给 phpclient（如果你还需要）
-                        const payload: WmPhpClientPayload = {
-                            type: "wmGameTableInfos",
-                            data,
-                        };
-
+                        // 首包也推一次（精简后的数组）
                         if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) {
-                            this.phpClientSocket.send(JSON.stringify(payload));
-                            // console.log("已将 protocol=35 data 推给 phpclient");
-                        } else {
-                            // console.warn("phpclient WS 未连接，无法推 wmGameTableInfos（protocol=35 data）");
+                            // ✅ 只发 tableStatus === 1 的
+                            const filtered = this.game101GroupInfo.filter(
+                                g => (g.tableStatus) === 1
+                            );
+                            if (filtered.length) {
+                                const payload: WmPhpClientPayload = { type: "wmGameTableInfos", data: filtered };
+                                try { this.phpClientSocket.send(JSON.stringify(payload)); } catch { }
+                            }
                         }
                     } else {
-                        // 其他协议按需再处理
+                        // 其他协议按需
                     }
                 } catch (e) {
                     console.error("解析大厅 15109 WS 消息失败", e, event.data);
@@ -356,7 +432,7 @@ export const useWmWsStore = defineStore("wmWs", {
                     data: {
                         sid: this.sid,
                         dtBetLimitSelectID: this.dtBetLimitSelectID,
-                        bGroupList: true, // 文档里 15801 是 true
+                        bGroupList: true,
                         videoName: "TC",
                         videoDelay: 3000,
                         userAgent: navigator.userAgent,
@@ -367,18 +443,12 @@ export const useWmWsStore = defineStore("wmWs", {
                 console.log("15801 已发送登录 protocol=1");
             };
 
-            ws.onmessage = () => {
-                // console.log("15801 收到:", event.data);
-            };
-
             ws.onerror = (e) => {
                 console.error("15801 WS error", e);
             };
 
             ws.onclose = () => {
                 console.log("15801 WS 已关闭");
-                // ❌ 不要调用 handleWsClosed("client")
-                // 15801 是一次性验证，断开属于正常流程
             };
         },
 
@@ -401,8 +471,8 @@ export const useWmWsStore = defineStore("wmWs", {
                     protocol: 1,
                     data: {
                         sid: this.sid,
-                        dtBetLimitSelectID: { 101: this.dtBetLimitSelectID![101] },//this.dtBetLimitSelectID,
-                        bGroupList: false, // 文档里 15101 是 false
+                        dtBetLimitSelectID: { 101: this.dtBetLimitSelectID![101] }, // 只传 101
+                        bGroupList: false,
                         videoName: "TC",
                         videoDelay: 3000,
                         userAgent: navigator.userAgent,
@@ -422,7 +492,6 @@ export const useWmWsStore = defineStore("wmWs", {
                 }
             };
 
-
             ws.onerror = (e) => {
                 console.error("15101 WS error", e);
             };
@@ -432,245 +501,109 @@ export const useWmWsStore = defineStore("wmWs", {
                 this.handleWsClosed("game");
             };
         },
+
         /** 统一处理 15101 游戏 WS 推送 */
         handleGameMessage(msg: { protocol: number; data: any }) {
             switch (msg.protocol) {
                 case 20: {
-                    // 每个牌桌游戏状态切换
                     const d = msg.data as { gameID: number; groupID: number; gameStage: number };
-
-                    // 只处理 gameID = 101 的
                     if (d.gameID !== 101) return;
-
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=20 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
                     const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
-                    if (!target) {
-                        // console.warn("protocol=20 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
-
-                    // 修改该桌子的 gameStage（Pinia 里直接改属性是响应式的）
+                    if (!target) return;
                     target.gameStage = d.gameStage;
-                    // console.log("protocol=20 更新桌面 gameStage 成功:", d.groupID, "=>", d.gameStage);
                     break;
                 }
+
                 case 21: {
-                    // 新牌局开局信息
                     const d = msg.data as any;
-
-                    // 只关心 gameID = 101（如果你想要 105 之类的，也可以去掉这个判断）
                     if (d.gameID !== 101) return;
+                    if (!this.game101GroupInfo?.length) return;
 
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=21 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
-                    const idx = this.game101GroupInfo.findIndex((g: any) => g.groupID === d.groupID);
-                    if (idx === -1) {
-                        // console.warn("protocol=21 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
+                    const idx = this.game101GroupInfo.findIndex((g) => g.groupID === d.groupID);
+                    if (idx === -1) return;
 
                     const oldItem = this.game101GroupInfo[idx]!;
+                    const lean = toLeanGroup(d);
 
-                    // ✅ 用展开运算符整体合并
-                    // - 先展开旧的
-                    // - 再展开 d（gameNo、dealerName、限红等会覆盖旧值）
-                    // - tableDtExtend 单独做一次浅合并，避免把老字段全抹掉
-                    const newItem = {
+                    const newItem: WmLeanGroup = {
                         ...oldItem,
-                        ...d,
-                        tableDtExtend: d.tableDtExtend
-                            ? {
-                                ...oldItem.tableDtExtend,
-                                ...d.tableDtExtend,
-                            }
-                            : oldItem.tableDtExtend,
-                        betTimeReceivedAt: Date.now(), // ⭐ 新牌局开始时记录时间戳
+
+                        groupID: oldItem.groupID,
+                        tableStatus: lean.tableStatus ?? oldItem.tableStatus, // ✅ 保留/更新 tableStatus
+                        gameStage: 1,
+
+                        tableDtExtend: lean.tableDtExtend ?? oldItem.tableDtExtend,
+
+                        gameNo: lean.gameNo,
+                        gameNoRound: lean.gameNoRound,
+
+                        dealerID: lean.dealerID ?? oldItem.dealerID,
+
+                        // 清倒计时，由 38 再覆盖
+                        betTimeCount: undefined,
+                        betTimeContent: undefined,
+                        timeMillisecond: undefined,
+                        betTimeReceivedAt: Date.now(),
+
+                        // 在线人数（若 21 有就覆盖）
+                        userCount: lean.userCount ?? oldItem.userCount,
+
+                        // 路单保留
+                        historyData: oldItem.historyData,
                     };
 
                     this.game101GroupInfo.splice(idx, 1, newItem);
-
-                    // console.log("protocol=21 更新新牌局信息成功:", d.groupID, d);
                     break;
                 }
-
 
                 case 23: {
-                    // 下注成功/失败返回，这里先简单打印
-                    const d = msg.data;
-                    console.log("protocol=23 下注返回:", d);
-
+                    console.log("protocol=23 下注返回:", msg.data);
                     break;
                 }
+
                 case 24: {
-                    // 发牌推送
-                    const d = msg.data as {
-                        gameID: number;
-                        groupID: number;
-                        cardArea: number;
-                        cardID: number;
-                        inputType: number;
-                    };
-
-                    if (d.gameID !== 101) return;
-
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=24 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
-                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
-                    if (!target) {
-                        // console.warn("protocol=24 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
-
-                    const areaKey = String(d.cardArea);
-
-                    // 旧 dtCard 没有就先给个空对象
-                    if (!target.dtCard) {
-                        target.dtCard = {};
-                    }
-
-                    target.dtCard[areaKey] = {
-                        cardID: d.cardID,
-                        inputType: d.inputType,
-                    };
-
-                    // console.log("protocol=24 发牌推送，更新 dtCard:", msg.data, d.groupID, JSON.stringify(target.dtCard));
+                    // 发牌对后端必要字段无影响，可忽略或保留你自己的前端用法
+                    // 保持空实现，避免噪音
                     break;
                 }
-
 
                 case 25: {
-                    // 结算结果
-                    const d = msg.data as {
-                        gameID: number;
-                        groupID: number;
-                        result: number;
-                        dtCard?: WmDtCard;
-                        winBetAreaArr?: number[];
-                    };
-
+                    // 结算阶段：只需保证阶段同步（其它字段非后端必需）
+                    const d = msg.data as { gameID: number; groupID: number };
                     if (d.gameID !== 101) return;
-
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=25 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
-                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
-                    if (!target) {
-                        // console.warn("protocol=25 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
-
-                    // 覆盖 result
-                    target.result = d.result;
-
-                    // 有 dtCard 就把整包结算牌覆盖进去
-                    if (d.dtCard) {
-                        target.dtCard = d.dtCard;
-                    }
-
-                    // 有 winBetAreaArr 就更新
-                    if (d.winBetAreaArr) {
-                        target.winBetAreaArr = d.winBetAreaArr;
-                    }
-
-                    // console.log("protocol=25 结算结果，更新桌面:", d.groupID, {
-                    //     result: target.result,
-                    //     dtCard: target.dtCard,
-                    //     winBetAreaArr: target.winBetAreaArr,
-                    // });
+                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    if (!target) return;
+                    if (target.gameStage !== 3) target.gameStage = 3;
+                    target.tableStatus = target.tableStatus;
                     break;
                 }
+
                 case 26: {
-                    // 历史路单
                     const d = msg.data as {
                         gameID: number;
                         groupID: number;
-                        groupType: number;
-                        historyArr: number[];
+                        groupType?: number;
                         historyData: any;
                     };
-
-                    // 如果你这套 store 只管 gameID = 101，这里可以继续过滤
-                    // 示例里是 103，就当结构说明，如果你想兼容多个 gameID，可以把这个判断去掉
                     if (d.gameID !== 101) return;
-
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=26 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
-                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
-                    if (!target) {
-                        // console.warn("protocol=26 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
-
-                    // 更新 groupType（有些场景会变，比如普通桌/特殊桌）
-                    target.groupType = d.groupType;
-
-                    // 整包覆盖历史路单
-                    target.historyArr = d.historyArr;
-                    target.historyData = d.historyData;
-
-                    // console.log("protocol=26 历史路单刷新:", d.groupID, {
-                    //     historyLen: d.historyArr?.length,
-                    //     totalCount: d.historyData?.totalCount,
-                    // });
+                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    if (!target) return;
+                    const resultObjArr = d.historyData?.resultObjArr ?? [];
+                    target.historyData = { resultObjArr };
                     break;
                 }
 
-
                 case 30: {
-                    // 刷新余额
-                    const d = msg.data as WmGameBalanceData;
-                    this.balanceData = d;
+                    this.balanceData = msg.data as WmGameBalanceData;
                     break;
                 }
 
                 case 33: {
-                    // 实时下注广播
-                    const d = msg.data as {
-                        gameID: number;
-                        groupID: number;
-                        dtNowBet: WmDtNowBet;
-                    };
-
-                    // 如果你这套 store 只管 gameID=101，还是可以过滤一下
-                    if (d.gameID !== 101) return;
-
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=33 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
-                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
-                    if (!target) {
-                        // console.warn("protocol=33 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
-
-                    // 直接整包替换实时下注数据
-                    target.dtNowBet = d.dtNowBet;
-
-                    // console.log("protocol=33 实时下注广播，更新 dtNowBet:", d.groupID, d.dtNowBet);
+                    // 实时下注对后端必要字段无影响，可忽略
                     break;
                 }
 
-                case 35://大厅信息
-                    break;
                 case 38: {
-                    // 下注倒计时刷新
                     const d = msg.data as {
                         gameID: number;
                         groupID: number;
@@ -678,38 +611,20 @@ export const useWmWsStore = defineStore("wmWs", {
                         betTimeContent: Record<string, any>;
                         timeMillisecond: number;
                     };
-
-                    // 只处理 gameID = 101（你如果要其它游戏，可以去掉这行）
                     if (d.gameID !== 101) return;
-
-                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=38 收到时 game101GroupInfo 还没有初始化", d);
-                        return;
-                    }
-
-                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
-                    if (!target) {
-                        // console.warn("protocol=38 未找到对应 groupID 的桌子:", d.groupID, d);
-                        return;
-                    }
-
-                    // 就地更新倒计时相关字段
+                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    if (!target) return;
                     target.betTimeCount = d.betTimeCount;
                     target.betTimeContent = d.betTimeContent;
                     target.timeMillisecond = d.timeMillisecond;
-                    // ⭐ 新增：记录“本地收到这次 38 的时间戳”
                     target.betTimeReceivedAt = Date.now();
-                    // console.log("protocol=38 倒计时刷新:", d.groupID, {
-                    //     betTimeCount: target.betTimeCount,
-                    //     timeMillisecond: target.timeMillisecond,
-                    // });
                     break;
                 }
 
-                case 39://玩家登录成功状态
+                case 39:
+                case 70:
                     break;
-                case 70: //公示
-                    break;
+
                 default:
                     console.log("15101 未知 protocol：", msg.protocol, msg.data);
             }
@@ -717,18 +632,15 @@ export const useWmWsStore = defineStore("wmWs", {
 
         /** 任意 WS 关闭时统一处理（自动模式下发起重连） */
         handleWsClosed(which: "hall" | "game") {
-            if (this.hmrSilence) return;      // 🔇 HMR 期间不重连
+            if (this.hmrSilence) return;
             console.log(`[WM] WS closed: ${which}`);
             if (!this.autoMode) return;
-
-            // 这里简单一点：只要有一个 WS 断开，就整条链路重新登录 + 重新连
             this.scheduleReconnect();
         },
 
-        /** 安排一次重连（简单版：固定 3 秒） */
+        /** 安排一次重连（固定 3 秒） */
         scheduleReconnect() {
             if (!this.autoMode) return;
-
             this.clearReconnectTimer();
             console.log("[WM] 3 秒后尝试自动重连...");
             this.reconnectTimer = window.setTimeout(() => {
@@ -754,9 +666,11 @@ export const useWmWsStore = defineStore("wmWs", {
                 window.clearInterval(this.hallHeartbeatTimer);
                 this.hallHeartbeatTimer = null;
             }
+            this.clearPhpClientReconnect();
             this.stopPhpPushLoop();
             this.clientAndGameConnected = false;
         },
+
         /** 向 15101 发送进房间请求（protocol = 10） */
         enterGroup(groupID: number) {
             if (!this.gameSocket || this.gameSocket.readyState !== WebSocket.OPEN) {
@@ -767,11 +681,7 @@ export const useWmWsStore = defineStore("wmWs", {
                 console.warn("[WM] 没有 dtBetLimitSelectID，无法进房间");
                 return;
             }
-
-            // 已经进过这个房间就不用再发
-            if (this.joinedGroupID == groupID) {
-                return;
-            }
+            if (this.joinedGroupID == groupID) return;
 
             const body = {
                 protocol: 10,
@@ -792,10 +702,8 @@ export const useWmWsStore = defineStore("wmWs", {
         },
 
         /** 下注（发到 15101） */
-        /** 向 15101 发送下注请求（protocol=22） */
-        /** 向 15101 发送下注请求（protocol = 22） */
         placeBet(params: {
-            groupID: number; // 桌号
+            groupID: number;
             gameNo: number;
             gameNoRound: number;
             betArr: { betArea: number; addBetMoney: number }[];
@@ -807,24 +715,20 @@ export const useWmWsStore = defineStore("wmWs", {
             }
 
             const { groupID, gameNo, gameNoRound, betArr, commission = 0 } = params;
-
             if (!betArr || betArr.length === 0) {
                 console.warn("[WM] betArr 为空，忽略下注");
                 return;
             }
 
-            // ⭐ 下注前先进房间（只会对每个 groupID 发一次 protocol=10）
             this.enterGroup(groupID);
 
-            // 自增流水号
             const sn = this.betSerialNumber++;
-
             const body = {
                 protocol: 22,
                 data: {
                     betSerialNumber: sn,
                     gameNo,
-                    gameNoRound,  // 不要 +1，用当前局号
+                    gameNoRound,
                     betArr,
                     commission,
                 },
@@ -836,27 +740,26 @@ export const useWmWsStore = defineStore("wmWs", {
             } catch (e) {
                 console.error("[WM] 发送下注失败:", e);
             }
-        }
-
+        },
     },
 });
+
+// HMR 静音处理
 if (import.meta.hot) {
     import.meta.hot.dispose(() => {
         const s = useWmWsStore();
-        s.hmrSilence = true;     // 🔇 标记：onclose 期间不重连
+        s.hmrSilence = true;
         try {
             s.hallSocket?.close();
             s.clientSocket?.close();
             s.gameSocket?.close();
             s.phpClientSocket?.close();
         } finally {
-            // 不在这里清掉标记，等新模块接管后再清
+            // 等新模块接管后再清标记
         }
     });
-    console.log(123);
-
     import.meta.hot.accept(() => {
         const s = useWmWsStore();
-        s.hmrSilence = false;    // 解除静音，恢复正常重连行为
+        s.hmrSilence = false;
     });
 }

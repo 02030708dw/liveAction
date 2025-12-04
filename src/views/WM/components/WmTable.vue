@@ -169,10 +169,9 @@ const getCountdownSec = (table: WmGroupInfo) => {
 
 const getStageText = (table: WmGroupInfo) => {
     switch (table.gameStage) {
-        case 1: return '洗牌中';
-        case 2: return '准备下注';
-        case 3: return '下注中';
-        case 4: return '开牌中';
+        case 1: return '下注中';
+        case 2: return '开牌中';
+        case 3: return '结算中';
         default: return '未知阶段';
     }
 };
