@@ -49,11 +49,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useWmWsStore } from "@/stores/wmWs";
-import type { WmGroupInfo } from "@/types/wm/ws";
+import type { WmLeanGroup } from "@/types/wm/ws";
 
 const props = defineProps<{
     show: boolean;
-    group: WmGroupInfo | null;
+    group: WmLeanGroup | null;
 }>();
 
 const emit = defineEmits<{

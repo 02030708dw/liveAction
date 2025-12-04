@@ -46,13 +46,13 @@
 
                         <div
                             class="flex-1 bg-slate-950/70 border border-slate-800 rounded-md px-3 py-2 text-xs text-slate-300">
-                            <div v-if="hasHistory(table)">
+                            <!-- <div v-if="hasHistory(table)">
                                 共 {{ table.historyArr!.length }} 局，
                                 红 {{ table.historyData?.redCount ?? 0 }} /
                                 黑 {{ table.historyData?.blackCount ?? 0 }} /
                                 0 {{ table.historyData?.zeroCount ?? 0 }} 次
-                            </div>
-                            <div v-else class="text-slate-500">暂无路纸数据</div>
+                            </div> -->
+                            <!-- <div v-else class="text-slate-500">暂无路纸数据</div> -->
                         </div>
                     </div>
 
@@ -119,11 +119,11 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue';
-import type { WmGroupInfo, WmGameBalanceData } from '@/types/wm/ws';
+import type { WmLeanGroup, WmGameBalanceData } from '@/types/wm/ws';
 import WmBetModal from './WmBetModal.vue';
 
 const props = defineProps<{
-    tables: WmGroupInfo[];
+    tables: WmLeanGroup[];
     balanceData?: WmGameBalanceData | null;
 }>();
 
@@ -131,9 +131,9 @@ const balanceData = computed(() => props.balanceData ?? null);
 
 // ========== 投注弹窗相关 ==========
 const betModalVisible = ref(false);
-const currentGroup = ref<WmGroupInfo | null>(null);
+const currentGroup = ref<WmLeanGroup | null>(null);
 
-const openBetModal = (table: WmGroupInfo) => {
+const openBetModal = (table: WmLeanGroup) => {
     currentGroup.value = table;
     betModalVisible.value = true;
 };
@@ -144,10 +144,10 @@ const handleBetSuccess = () => {
 };
 
 // ========== 原有工具函数 ==========
-const hasHistory = (table: WmGroupInfo) =>
-    Array.isArray(table.historyArr) && table.historyArr.length > 0;
+// const hasHistory = (table: WmLeanGroup) =>
+//     Array.isArray(table.historyArr) && table.historyArr.length > 0;
 
-const getCountdownSec = (table: WmGroupInfo) => {
+const getCountdownSec = (table: WmLeanGroup) => {
     const baseMs = table.timeMillisecond ?? 0; // 原始剩余毫秒
     if (!baseMs || baseMs <= 0) return 0;
 
@@ -167,7 +167,7 @@ const getCountdownSec = (table: WmGroupInfo) => {
 };
 
 
-const getStageText = (table: WmGroupInfo) => {
+const getStageText = (table: WmLeanGroup) => {
     switch (table.gameStage) {
         case 1: return '下注中';
         case 2: return '开牌中';
@@ -176,14 +176,14 @@ const getStageText = (table: WmGroupInfo) => {
     }
 };
 
-const getTotalBet = (table: WmGroupInfo) => {
+const getTotalBet = (table: WmLeanGroup) => {
     const dt: any = table.dtNowBet;
     if (!dt) return 0;
     if (dt['-1']) return Number(dt['-1'].value || 0);
     return Object.values(dt).reduce((sum: number, v: any) => sum + Number(v?.value || 0), 0);
 };
 
-const getTotalPlayerCount = (table: WmGroupInfo) => {
+const getTotalPlayerCount = (table: WmLeanGroup) => {
     const dt: any = table.dtNowBet;
     if (!dt) return 0;
     if (dt['-1']) return Number(dt['-1'].playerCount || 0);

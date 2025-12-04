@@ -8,43 +8,10 @@ import type {
     WmPhpClientPayload,
     WmHallInit35Data,
     WmGameBalanceData,
-
+    WmLeanGroup
 } from "@/types/wm/ws";
 
-/** ========= 精简桌面数据（仅后端需要） ========= */
-type WmLeanGroup = {
-    groupID: number;
 
-    // 桌态（保持和后端要求一致；与 gameStage 同值）
-    tableStatus?: number;
-    gameStage?: number;
-
-    // 限红（白名单）
-    tableDtExtend?: {
-        singleLimit?: number;
-        tableMinBet?: number;
-        [k: string]: any;
-    };
-
-    // 局号
-    gameNo?: number;
-    gameNoRound?: number;
-
-    // 荷官
-    dealerID?: number | string;
-
-    // 倒计时
-    betTimeCount?: number;
-    betTimeContent?: Record<string, any>;
-    timeMillisecond?: number;
-    betTimeReceivedAt?: number;
-
-    // 在线人数
-    userCount?: number;
-
-    // 路单（仅 resultObjArr）
-    historyData?: { resultObjArr?: any[] };
-};
 
 // 将 WM 原始 group 投影成精简结构
 function toLeanGroup(raw: any): WmLeanGroup {
@@ -76,6 +43,10 @@ function toLeanGroup(raw: any): WmLeanGroup {
         historyData: raw.historyData?.resultObjArr
             ? { resultObjArr: raw.historyData.resultObjArr }
             : undefined,
+
+        dealerName: raw.dealerName,
+        dealerImage: raw.dealerImage,
+        dtNowBet: raw.dtNowBet,
     };
 }
 
@@ -641,12 +612,21 @@ export const useWmWsStore = defineStore("wmWs", {
         /** 安排一次重连（固定 3 秒） */
         scheduleReconnect() {
             if (!this.autoMode) return;
+
             this.clearReconnectTimer();
             console.log("[WM] 3 秒后尝试自动重连...");
+
             this.reconnectTimer = window.setTimeout(() => {
+                this.reconnectTimer = null;
+
+                // ✅ 先把所有旧连接 & 定时器关掉，避免回调干扰
+                this.disposeAll();
+
+                // ✅ 走一遍自动登录 + 建链
                 this.autoLoginAndConnect();
             }, 3000) as unknown as number;
         },
+
 
         clearReconnectTimer() {
             if (this.reconnectTimer !== null) {
@@ -666,10 +646,18 @@ export const useWmWsStore = defineStore("wmWs", {
                 window.clearInterval(this.hallHeartbeatTimer);
                 this.hallHeartbeatTimer = null;
             }
-            this.clearPhpClientReconnect();
+
             this.stopPhpPushLoop();
+            this.clearPhpClientReconnect();
+
             this.clientAndGameConnected = false;
+            this.joinedGroupID = 0;
+
+            // 如果你希望每次重连都重新拿 sid，可以顺便清一下：
+            // this.sid = '';
+            // this.dtBetLimitSelectID = null;
         },
+
 
         /** 向 15101 发送进房间请求（protocol = 10） */
         enterGroup(groupID: number) {

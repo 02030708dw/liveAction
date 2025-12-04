@@ -53,7 +53,7 @@
       </div>
     </section>
     <!-- 桌子列表 -->
-    <!-- <WmTables :tables="tables" :balance-data="balanceData" /> -->
+    <WmTables :tables="tables" :balance-data="balanceData" />
   </main>
 </template>
 

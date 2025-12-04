@@ -190,3 +190,42 @@ export interface WmNowBetItem {
 
 // dtNowBet 结构：{ "1": { playerCount, value }, "-1": {...}, ... }
 export type WmDtNowBet = Record<string, WmNowBetItem>;
+
+/** ========= 精简桌面数据（仅后端需要） ========= */
+export type WmLeanGroup = {
+    groupID: number;
+
+    // 桌态（保持和后端要求一致；与 gameStage 同值）
+    tableStatus?: number;
+    gameStage?: number;
+
+    // 限红（白名单）
+    tableDtExtend?: {
+        singleLimit?: number;
+        tableMinBet?: number;
+        [k: string]: any;
+    };
+
+    // 局号
+    gameNo: number;
+    gameNoRound: number;
+
+    // 荷官
+    dealerID?: number | string;
+
+    // 倒计时
+    betTimeCount?: number;
+    betTimeContent?: Record<string, any>;
+    timeMillisecond?: number;
+    betTimeReceivedAt?: number;
+
+    // 在线人数
+    userCount?: number;
+
+    // 路单（仅 resultObjArr）
+    historyData?: { resultObjArr?: any[] };
+
+    dealerName?: string;
+    dealerImage?: string;
+    dtNowBet?: WmDtNowBet;
+};
