@@ -491,7 +491,7 @@ export const useWmWsStore = defineStore("wmWs", {
                                 ...d.tableDtExtend,
                             }
                             : oldItem.tableDtExtend,
-                        // betTimeReceivedAt: Date.now(), // ⭐ 新牌局开始时记录时间戳
+                        betTimeReceivedAt: Date.now(), // ⭐ 新牌局开始时记录时间戳
                     };
 
                     this.game101GroupInfo.splice(idx, 1, newItem);
