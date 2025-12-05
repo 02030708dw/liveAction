@@ -8,7 +8,8 @@ import type {
     WmPhpClientPayload,
     WmHallInit35Data,
     WmGameBalanceData,
-    WmLeanGroup
+    WmLeanGroup,
+    WmDtNowBet
 } from "@/types/wm/ws";
 
 
@@ -570,9 +571,33 @@ export const useWmWsStore = defineStore("wmWs", {
                 }
 
                 case 33: {
-                    // 实时下注对后端必要字段无影响，可忽略
+                    // 实时下注广播
+                    const d = msg.data as {
+                        gameID: number;
+                        groupID: number;
+                        dtNowBet: WmDtNowBet;
+                    };
+
+                    if (d.gameID !== 101) return;
+
+                    if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
+                        // console.warn("protocol=33 收到时 game101GroupInfo 还没有初始化", d);
+                        return;
+                    }
+
+                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
+                    if (!target) {
+                        // console.warn("protocol=33 未找到对应 groupID 的桌子:", d.groupID, d);
+                        return;
+                    }
+
+                    // 直接整包替换实时下注数据
+                    target.dtNowBet = d.dtNowBet;
+
+                    // console.log("protocol=33 实时下注广播，更新 dtNowBet:", d.groupID, d.dtNowBet);
                     break;
                 }
+
 
                 case 38: {
                     const d = msg.data as {
