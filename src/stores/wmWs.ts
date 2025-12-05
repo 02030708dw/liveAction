@@ -12,8 +12,6 @@ import type {
     WmDtNowBet
 } from "@/types/wm/ws";
 
-
-
 // 将 WM 原始 group 投影成精简结构
 function toLeanGroup(raw: any): WmLeanGroup {
     return {
@@ -68,9 +66,11 @@ export const useWmWsStore = defineStore("wmWs", {
 
         // 定时器
         hallHeartbeatTimer: null as number | null,
+
+        // ⭐ 主链路重连定时器（15109/15801/15101）
         reconnectTimer: null as number | null,
 
-        // phpclient 独立重连（指数退避）
+        // ⭐ phpclient 独立重连（指数退避）
         phpClientReconnectTimer: null as number | null,
         phpClientRetryMs: 1000 as number,
         phpClientMaxRetryMs: 10000 as number,
@@ -112,26 +112,40 @@ export const useWmWsStore = defineStore("wmWs", {
             this.lastUsername = username;
             this.lastPassword = password;
             this.clearReconnectTimer();
-            this.autoLoginAndConnect();
+            this.autoLoginAndConnect(); // ⭐ 首次：主链路 + phpclient 一起拉起
         },
 
         /** --- 对外：停止自动模式 + 清理所有连接 --- */
         stopAutoFlow() {
             this.autoMode = false;
             this.clearReconnectTimer();
-            this.disposeAll();
+            this.disposeAll(); // ⭐ 停止时，所有 WS 都关
         },
 
-        /** 自动流程：登录 + enterGame + 全链路 WS */
+        /** 自动流程：登录 + enterGame + 全链路 WS（首连用，包含 phpclient） */
         async autoLoginAndConnect() {
             if (!this.lastUsername || !this.lastPassword) return;
 
             try {
                 await this.httpLogin(this.lastUsername, this.lastPassword);
-                await this.enterGameAndConnect();
+                await this.enterGameAndConnect(true); // ⭐ 首次：withPhpClient = true
             } catch (e) {
+                // 首连失败也可以安排重试（可选）
                 this.scheduleReconnect();
                 console.error("[WM] autoLoginAndConnect 失败：", e);
+            }
+        },
+
+        /** ⭐ 主链路重连用：重新登录 + 走一遍 WM 链路（不动 phpclient） */
+        async autoLoginAndConnectMainOnly() {
+            if (!this.lastUsername || !this.lastPassword) return;
+
+            try {
+                await this.httpLogin(this.lastUsername, this.lastPassword);
+                await this.enterGameAndConnect(false); // ⭐ 重连：withPhpClient = false
+            } catch (e) {
+                this.scheduleReconnect(); // 再安排下一次重试
+                console.error("[WM] autoLoginAndConnectMainOnly 失败：", e);
             }
         },
 
@@ -149,8 +163,11 @@ export const useWmWsStore = defineStore("wmWs", {
             }
         },
 
-        /** enterWMGame + 拿 sid + 拉起整个 WS 链路 */
-        async enterGameAndConnect() {
+        /**
+         * enterWMGame + 拿 sid + 拉起 WM WS 链路
+         * @param withPhpClient 是否同时（重新）处理 phpclient。重连主链路时传 false。
+         */
+        async enterGameAndConnect(withPhpClient: boolean = true) {
             const authStore = useAuthStore();
             try {
                 const res = (await authStore.enterWMGame()) as {
@@ -171,12 +188,17 @@ export const useWmWsStore = defineStore("wmWs", {
                 this.sid = sidValue;
                 console.log("获取到 sid:", this.sid);
 
-                // 重置状态
+                // 重置主链路状态
                 this.clientAndGameConnected = false;
                 this.dtBetLimitSelectID = null;
+                this.joinedGroupID = 0;
 
-                // 拉起 WS 链路：先连 phpclient，再连大厅
-                this.connectPhpClient();
+                // ⭐ 根据标记决定是否动 phpclient
+                if (withPhpClient) {
+                    this.connectPhpClient();
+                }
+
+                // ⭐ 主链路：15109 -> 15109 登录成功后再拉 15801 / 15101
                 this.connectHall();
             } catch (e: any) {
                 this.enterGameOut = `进入游戏失败：${e?.message ?? String(e)}`;
@@ -210,13 +232,14 @@ export const useWmWsStore = defineStore("wmWs", {
             ws.onclose = () => {
                 console.log("phpclient WS 已关闭");
                 this.stopPhpPushLoop();
+                // ⭐ 只重连 phpclient，不动 WM 主链路
                 if (this.autoMode && !this.hmrSilence) {
                     this.schedulePhpClientReconnect();
                 }
             };
         },
 
-        /** phpclient 指数退避重连 */
+        /** ⭐ phpclient 指数退避重连（只负责 phpclient 自己） */
         schedulePhpClientReconnect() {
             if (!this.autoMode) return;
             if (this.phpClientReconnectTimer !== null) return;
@@ -421,6 +444,8 @@ export const useWmWsStore = defineStore("wmWs", {
 
             ws.onclose = () => {
                 console.log("15801 WS 已关闭");
+                // ⭐ 15801 掉线也触发主链路重连
+                this.handleWsClosed("client");
             };
         },
 
@@ -522,6 +547,10 @@ export const useWmWsStore = defineStore("wmWs", {
 
                         // 路单保留
                         historyData: oldItem.historyData,
+
+                        dealerName: lean.dealerName ?? oldItem.dealerName,
+                        dealerImage: lean.dealerImage ?? oldItem.dealerImage,
+                        dtNowBet: lean.dtNowBet ?? oldItem.dtNowBet,
                     };
 
                     this.game101GroupInfo.splice(idx, 1, newItem);
@@ -581,23 +610,18 @@ export const useWmWsStore = defineStore("wmWs", {
                     if (d.gameID !== 101) return;
 
                     if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) {
-                        // console.warn("protocol=33 收到时 game101GroupInfo 还没有初始化", d);
                         return;
                     }
 
                     const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
                     if (!target) {
-                        // console.warn("protocol=33 未找到对应 groupID 的桌子:", d.groupID, d);
                         return;
                     }
 
                     // 直接整包替换实时下注数据
                     target.dtNowBet = d.dtNowBet;
-
-                    // console.log("protocol=33 实时下注广播，更新 dtNowBet:", d.groupID, d.dtNowBet);
                     break;
                 }
-
 
                 case 38: {
                     const d = msg.data as {
@@ -626,32 +650,58 @@ export const useWmWsStore = defineStore("wmWs", {
             }
         },
 
-        /** 任意 WS 关闭时统一处理（自动模式下发起重连） */
-        handleWsClosed(which: "hall" | "game") {
+        /** ⭐ 只清理 WM 主链路（15109/15801/15101），不动 phpclient */
+        disposeMainWs() {
+            this.hallSocket?.close();
+            this.clientSocket?.close();
+            this.gameSocket?.close();
+
+            if (this.hallHeartbeatTimer !== null) {
+                window.clearInterval(this.hallHeartbeatTimer);
+                this.hallHeartbeatTimer = null;
+            }
+
+            this.clientAndGameConnected = false;
+            this.joinedGroupID = 0;
+        },
+
+        /** 手动关闭所有 WS & 定时器（含 phpclient） */
+        disposeAll() {
+            this.disposeMainWs();
+
+            this.phpClientSocket?.close();
+            this.stopPhpPushLoop();
+            this.clearPhpClientReconnect();
+
+            this.sid = "";
+            this.dtBetLimitSelectID = null;
+        },
+
+        /** 任意 WM 主 WS 关闭时统一处理（自动模式下发起“主链路重连”） */
+        handleWsClosed(which: "hall" | "game" | "client") {
             if (this.hmrSilence) return;
             console.log(`[WM] WS closed: ${which}`);
             if (!this.autoMode) return;
             this.scheduleReconnect();
         },
 
-        /** 安排一次重连（固定 3 秒） */
+        /** ⭐ 安排一次主链路重连（固定 3 秒，不影响 phpclient） */
         scheduleReconnect() {
             if (!this.autoMode) return;
 
             this.clearReconnectTimer();
-            console.log("[WM] 3 秒后尝试自动重连...");
+            console.log("[WM] 3 秒后尝试自动重连主链路...");
 
             this.reconnectTimer = window.setTimeout(() => {
                 this.reconnectTimer = null;
 
-                // ✅ 先把所有旧连接 & 定时器关掉，避免回调干扰
-                this.disposeAll();
+                // ✅ 只清理主链路，不关闭 phpclient
+                this.disposeMainWs();
 
-                // ✅ 走一遍自动登录 + 建链
-                this.autoLoginAndConnect();
+                // ✅ 重新登录 + enterWMGame + 重连 15109 / 15801 / 15101
+                this.autoLoginAndConnectMainOnly();
             }, 3000) as unknown as number;
         },
-
 
         clearReconnectTimer() {
             if (this.reconnectTimer !== null) {
@@ -659,30 +709,6 @@ export const useWmWsStore = defineStore("wmWs", {
                 this.reconnectTimer = null;
             }
         },
-
-        /** 手动关闭所有 WS & 定时器 */
-        disposeAll() {
-            this.hallSocket?.close();
-            this.clientSocket?.close();
-            this.gameSocket?.close();
-            this.phpClientSocket?.close();
-
-            if (this.hallHeartbeatTimer !== null) {
-                window.clearInterval(this.hallHeartbeatTimer);
-                this.hallHeartbeatTimer = null;
-            }
-
-            this.stopPhpPushLoop();
-            this.clearPhpClientReconnect();
-
-            this.clientAndGameConnected = false;
-            this.joinedGroupID = 0;
-
-            // 如果你希望每次重连都重新拿 sid，可以顺便清一下：
-            // this.sid = '';
-            // this.dtBetLimitSelectID = null;
-        },
-
 
         /** 向 15101 发送进房间请求（protocol = 10） */
         enterGroup(groupID: number) {
