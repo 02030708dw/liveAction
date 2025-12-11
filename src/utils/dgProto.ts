@@ -266,8 +266,8 @@ export function mapPublicBean(raw: any): PublicMapped {
         list: Array.isArray(raw[12]) ? raw[12].map(asString) : [],
         mids: Array.isArray(raw[13]) ? raw[13] : [],
         object: asString(raw[14]),
-        virtual: mapVirtual(raw[15]),
-        lobbyPush: mapLobbyPush(raw[16]),
+        virtual: mapVirtual(raw[16]),
+        lobbyPush: mapLobbyPush(raw[15]),
         table: mapTable(raw[17]),
     };
     if (raw[18]) (o as any).room = raw[18];

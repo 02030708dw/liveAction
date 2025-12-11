@@ -1,13 +1,30 @@
+//域名：wss://hwdata-new.taxyss.com/ 
+// 1.发送参数的token需要加密，加密方式是加密你整个参数{加密函数(JSON.stringify(i)),i是你的整个参数结构}，发送也需要转成二进制再send，具体请看请求示例文件 
+// 2.回传参数不需要解密，但是需要重新组装一下数据因为是字节码传输，具体组装和组装数据模型请看示例文件 一： 握手成功之后进入游戏大厅先要发送10086，45，43，5011，87，24 这几个请求用于初始化大厅和登录 
+// 二： 链接成功后，需要间隔 1~2秒发送一次心跳（99） 
+// 三.下注（6），下注信息需要加密，需要用到10086的key，和整体的key，详情请看示例文件,需要根据1015拿到最新的seat,1002拿到最新的gameno 接口回传参数说明 
+// 6：下注成功信息：dList里面第一个是余额信息 
+// 24：富豪榜currencyName币种，username：登录账号，online：是否在线，userLevel：玩家等级 
+// 43：大厅桌台总览，初始化大厅的数据，roads=路纸，dealer=当前牌局荷官信息（荷官封面地址host==https://new-dd-cloudfront.ywjxi.com/vd/vd/image/Image/dealer/）每个房间的totalAmount总下注金额，onlineCount在线人数等，只等注意的是object（里卖弄有一个type，如果下注的时候桌号有这个type需要用到，没有就为0）gameNo这是游戏局编号后面很多地方都需要，gameId游戏类型，tableID桌号； 
+// 85：聊天信息: 
+// 201：桌上玩家信息：userName：昵称，currency：币种，balance：余额，betInfo：当前下注明细，streak：连胜次数，betNum / winNum：下注/胜局统计； 
+// 207：最新的各桌在线人数和投注额统计。客户端可以选择性地用这些数据更新大厅界面的热门程度、筹码总量显示等 
+// 208：当前桌台总投注额统计：banker, player, tie：各投注区总金额，pPair, bPair, super6 等：其他玩法投注金额，bankerNum, playerNum 等：统计局数 
+// 1002：单桌实时状态,shoeId=靴号，playId：局号，state：状态（1=下注中，2=发牌中，5=结算中等），countDown：剩余秒数（下注倒计时），poker：当前牌面（尚未开牌时为 0），gameNo：完整牌局编号，poker参数：banker（庄家牌），player（闲家牌） 
+// 1003：开牌结果（会发送几次开牌过程），当前局的开牌结果；gameNo：当前局号，tableId：桌号，object： player=闲家（Player）的三张牌编码，banker=庄家（Banker）的三张牌编码
+// 1004：路纸：list是数据，如【#X#Y#Z】其中x表示胜负方（1=庄(Banker)，5=闲(Player)，9=和(Tie)），y表示特殊类型（0=无特殊，1=出现对子），z点数或顺序编号（通常为庄或闲的点数，也可视作局序号） 
+// 5014：游戏统计、胜率分析：id对应不同房间/玩法,nums：局数，wins：赢局数,type=0：实时数据，type=1：汇总数据(用于分析近20局的下注玩家偏好) 
+// 5015:游戏事件用于判断用户行为，比如进入牌局，离开房间等等，type=8进入牌局，seat玩家座位号(用于下注的roadType参数值),gameNo和对应的tableId，如果发生了改变需要记录用于下注 
+// 10086：回传大厅信息，主要登录信息和一些公告，和游戏的id等数据，有用的主要是token和key（回传示例里面的 'list' 里的第一个参数，用于后面游戏下注的加密），username;
+
 import { defineStore } from 'pinia';
 import CryptoJS from 'crypto-js';
+import type { PushState, UiTable } from '@/utils/dgProto';
 import {
-    Reader,
-    parseMsg,
-    mapPublicBean,
+    decodeDgMsgVm86,
     PublicBean,
     buildUiTableData,
-} from '@/utils/dgProto';
-import type { PushState, UiTable } from '@/utils/dgProto';
+} from '@/utils/dgDebugDecode';
 import { useAuthStore } from './dgAuth';
 
 interface State {
@@ -30,6 +47,11 @@ interface State {
     /** 下注相关 */
     userName: string;
     betEncryptKey: string;
+
+    /** 43.object 解析后，按 tableId 存 type / count */
+    dgObjectByTableId: Record<number, { type: number; count: number }>;
+    /** 1002 / 5015 / 1015 的最新 gameNo / seat，按 tableId 存 */
+    dgRuntimeByTableId: Record<number, { gameNo?: string; seat?: number }>;
 }
 
 /** ================= 推送给后端的 WS 配置 ================= */
@@ -73,6 +95,30 @@ export function resolveStatus(tableInfo: any, dealerEvent: any) {
     return { text: t, className: 'status-pill' };
 }
 
+/** 解析 cmd=43 里的 object 字符串 -> 按 tableId 映射 */
+function parseDgObjectByTableId(
+    objStr?: string | null,
+): Record<number, { type: number; count: number }> {
+    if (!objStr) return {};
+    try {
+        const raw = JSON.parse(objStr) as Record<
+            string,
+            { type?: number; count?: number }
+        >;
+        const map: Record<number, { type: number; count: number }> = {};
+        for (const [idStr, v] of Object.entries(raw)) {
+            if (!v || typeof v.type !== 'number') continue;
+            const id = Number(idStr);
+            if (!Number.isFinite(id)) continue;
+            map[id] = { type: v.type, count: v.count ?? 0 };
+        }
+        return map;
+    } catch (e) {
+        console.warn('[DG] parseDgObjectByTableId 失败', e, objStr);
+        return {};
+    }
+}
+
 export const useDgWsStore = defineStore('dgWs', {
     state: (): State => ({
         token: '',
@@ -107,7 +153,25 @@ export const useDgWsStore = defineStore('dgWs', {
         random: '',
         userName: '',
         betEncryptKey: '',
+        dgObjectByTableId: {},
+        dgRuntimeByTableId: {},
     }),
+
+    getters: {
+        /** 最新 gameNo（来自 1002 / 5015 / 1015），按 tableId */
+        dgGameNoForBet: (state) => (tableId: number): string => {
+            return state.dgRuntimeByTableId[tableId]?.gameNo ?? '';
+        },
+        /** 最新 seat（主要来自 5015 / 1015），按 tableId，用作 roadType */
+        dgSeatForBet: (state) => (tableId: number): number => {
+            return state.dgRuntimeByTableId[tableId]?.seat ?? 0;
+        },
+        /** 43.object 里对应桌子的 type，备用 */
+        dgObjectTypeForTable: (state) => (tableId: number): number => {
+            return state.dgObjectByTableId[tableId]?.type ?? 0;
+        },
+    },
+
     actions: {
         initFromAuth() {
             const authStore = useAuthStore();
@@ -135,8 +199,6 @@ export const useDgWsStore = defineStore('dgWs', {
         log(msg: string) {
             this.logs.push(msg);
             if (this.logs.length > 200) this.logs.shift();
-            // 也顺便打到控制台
-            console.log(msg);
         },
 
         getEncryptToken(str: string): string {
@@ -160,24 +222,30 @@ export const useDgWsStore = defineStore('dgWs', {
                 time: Date.now(),
             };
             const encToken = this.getEncryptToken(JSON.stringify(envelope));
+            let payload = null;
+            if (cmd != 6) {
+                payload = {
+                    cmd,
+                    token: encToken,
+                    codeId: 0,
+                    lobbyId: 0,
+                    gameNo: '',
+                    seat: 0,
+                    tableId,
+                    mid,
+                    dList: [],
+                    type,
+                    userName: '',
+                    list: [],
+                    mids: [],
+                    object: cmd === 10086 ? 'PC' : '',
+                    ...extra,
+                };
+            } else {
+                payload = { cmd, token: encToken, ...extra };
+                console.log(payload);
+            }
 
-            const payload = {
-                cmd,
-                token: encToken,
-                codeId: 0,
-                lobbyId: 0,
-                gameNo: '',
-                seat: 0,
-                tableId,
-                mid,
-                dList: [],
-                type,
-                userName: '',
-                list: [],
-                mids: [],
-                object: cmd === 10086 ? 'PC' : '',
-                ...extra,
-            };
             return PublicBean.encode(payload).finish() as Uint8Array;
         },
 
@@ -188,10 +256,8 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             const buf = this.buildPacket(cmd, extra);
             this.ws.send(buf);
-            // this.log(`📤 已发送 cmd=${cmd}`);
             if (cmd === 6) {
-                console.log('buf', buf);
-
+                console.log('buf', extra);
             }
         },
 
@@ -209,7 +275,6 @@ export const useDgWsStore = defineStore('dgWs', {
                 for (const pkt of seq) {
                     const buf = this.buildPacket(pkt.cmd, pkt);
                     this.ws?.send(buf);
-                    // this.log(`📤 已发送 cmd=${pkt.cmd}`);
                     await new Promise((r) => setTimeout(r, 300));
                 }
                 this.log('✅ 初始化完成');
@@ -293,18 +358,19 @@ export const useDgWsStore = defineStore('dgWs', {
                         ? data
                         : (data as Blob).slice(0).arrayBuffer();
                 if (arrBuf instanceof Promise) {
-                    arrBuf.then((ab) => this._handleDecoded(new Uint8Array(ab)));
+                    arrBuf.then((ab) =>
+                        this._handleDecoded(new Uint8Array(ab), data),
+                    );
                 } else {
-                    this._handleDecoded(new Uint8Array(arrBuf));
+                    this._handleDecoded(new Uint8Array(arrBuf), arrBuf);
                 }
-            } catch (err: any) {
-                // this.log('📩 解码失败: ' + err?.message);
+            } catch {
+                // 解码错误直接忽略
             }
         },
 
-        _handleDecoded(u8: Uint8Array) {
-            const raw = parseMsg(new Reader(u8));
-            const mapped = mapPublicBean(raw);
+        _handleDecoded(u8: Uint8Array, _rawData: any) {
+            const mapped = decodeDgMsgVm86(u8);
             const cmd = mapped.cmd | 0;
             const tableId =
                 (mapped as any).tableId || (mapped as any).tableID || 0;
@@ -315,7 +381,7 @@ export const useDgWsStore = defineStore('dgWs', {
                         ? mapped.list
                         : [];
 
-                    // 1) 提取 userName：优先用 mapped.userName，拿不到再从 loginResp 兜底
+                    // 1) 提取 userName
                     if (mapped.userName) {
                         this.userName = mapped.userName;
                     } else {
@@ -343,12 +409,17 @@ export const useDgWsStore = defineStore('dgWs', {
                     this.schedulePush();
                     break;
 
-                case 43:
+                case 43: {
                     this.pushState.table = Array.isArray(mapped.table)
                         ? mapped.table
                         : [];
+                    // 解析 object -> dgObjectByTableId
+                    this.dgObjectByTableId = parseDgObjectByTableId(
+                        mapped.object,
+                    );
                     this.schedulePush();
                     break;
+                }
 
                 case 1002: {
                     if (Array.isArray(mapped.table)) {
@@ -357,7 +428,18 @@ export const useDgWsStore = defineStore('dgWs', {
                             if (!tid) continue;
                             this.pushState.tableStateById[tid] = t;
 
-                            if (t.state === 1 && typeof t.countDown === 'number') {
+                            // 记录每桌最新 gameNo
+                            if (t.gameNo) {
+                                const rt =
+                                    (this.dgRuntimeByTableId[tid] ??=
+                                        {});
+                                rt.gameNo = t.gameNo;
+                            }
+
+                            if (
+                                t.state === 1 &&
+                                typeof t.countDown === 'number'
+                            ) {
                                 this.pushState.countdownByTableId[tid] = {
                                     base: t.countDown,
                                     lastUpdate: Date.now(),
@@ -403,12 +485,24 @@ export const useDgWsStore = defineStore('dgWs', {
                     }
                     break;
 
-                case 5015:
+                case 5015: {
+                    console.log(5015, mapped);
                     if (tableId) {
                         this.pushState.eventsByTableId[tableId] = mapped;
+
+                        const rt =
+                            (this.dgRuntimeByTableId[tableId] ??= {});
+                        if (typeof mapped.seat === 'number') {
+                            rt.seat = mapped.seat;
+                        }
+                        if (mapped.gameNo) {
+                            rt.gameNo = mapped.gameNo;
+                        }
+
                         this.schedulePush();
                     }
                     break;
+                }
 
                 case 6:
                     if (tableId) {
@@ -426,23 +520,34 @@ export const useDgWsStore = defineStore('dgWs', {
 
                 case 1003:
                     if (tableId && mapped.gameNo) {
-
                         if (!this.pushState.openCardByTableId[tableId]) {
                             this.pushState.openCardByTableId[tableId] = {};
                         }
-                        this.pushState.openCardByTableId[tableId][mapped.gameNo] =
-                            mapped;
+                        this.pushState.openCardByTableId[tableId][
+                            mapped.gameNo
+                        ] = mapped;
                         this.schedulePush();
                     }
                     break;
-                case 1005:
-                    console.log(tableId, mapped);
+
+                case 1015: {
+                    console.log('1015 id:', tableId, mapped);
+                    if (tableId) {
+                        const rt =
+                            (this.dgRuntimeByTableId[tableId] ??= {});
+                        if (typeof mapped.seat === 'number') {
+                            rt.seat = mapped.seat;
+                        }
+                        if (mapped.gameNo) {
+                            rt.gameNo = mapped.gameNo;
+                        }
+                    }
                     break;
+                }
+
                 default:
                     break;
             }
-
-            // this.log('📩 收到: ' + JSON.stringify(mapped));
         },
 
         handleTableArrayLike(mapped: any, field: keyof PushState) {
@@ -455,6 +560,7 @@ export const useDgWsStore = defineStore('dgWs', {
             }
             this.schedulePush();
         },
+
         handleLobbyPush1004(mapped: any) {
             const tid = mapped.tableId || mapped.tableID;
             if (!tid) return;
@@ -466,8 +572,9 @@ export const useDgWsStore = defineStore('dgWs', {
                     summary.roads = mapped.list;
                 }
             }
-            this.pushState.roadsByTableId[tid] = mapped.list
+            this.pushState.roadsByTableId[tid] = mapped.list;
         },
+
         handleLobbyPush207(mapped: any) {
             const arr = Array.isArray(mapped.lobbyPush) ? mapped.lobbyPush : [];
             if (!arr.length || !Array.isArray(this.pushState.table)) return;
@@ -524,13 +631,9 @@ export const useDgWsStore = defineStore('dgWs', {
         /** 连接推送给后端的 WS */
         connectPushWS() {
             const url = PUSH_WS_URL;
-            // this.log(`[PUSH] 连接到: ${url}`);
-
             wsPush = new WebSocket(url);
 
             wsPush.onopen = () => {
-                // this.log('✅ 推送WS 已连接');
-                // 把排队的消息发出去
                 if (pushQueue.length && wsPush) {
                     pushQueue.forEach((msg) => wsPush!.send(msg));
                     pushQueue = [];
@@ -538,12 +641,8 @@ export const useDgWsStore = defineStore('dgWs', {
             };
 
             wsPush.onclose = () => {
-                // this.log(
-                //     `🔌 推送WS 连接关闭 code=${e.code} reason=${e.reason || ''}`,
-                // );
                 wsPush = null;
 
-                // 简单重连逻辑
                 if (pushReconnectTimer != null) {
                     clearTimeout(pushReconnectTimer);
                 }
@@ -554,7 +653,7 @@ export const useDgWsStore = defineStore('dgWs', {
             };
 
             wsPush.onerror = () => {
-                // this.log('❌ 推送WS 连接错误');
+                // 忽略
             };
         },
 
@@ -569,12 +668,11 @@ export const useDgWsStore = defineStore('dgWs', {
 
         /** 把聚合后的桌台信息推送给后端 `/ws/getTableInfos` */
         pushCombined() {
-            // 先用现有逻辑重建 UI（防御一下，确保 uiTables 是最新的）
             this.rebuildUiTables();
 
             const payload = {
                 type: 'dgGameTableInfos',
-                data: this.uiTables, // ⭐ 直接推轻量的 UiTable 视图
+                data: this.uiTables, // 直接推轻量的 UiTable 视图
             };
 
             const text = JSON.stringify(payload);
@@ -584,8 +682,6 @@ export const useDgWsStore = defineStore('dgWs', {
             } else {
                 pushQueue.push(text);
             }
-
-            // this.log('📤 推送WS 已发送合并 dgGameTableInfos（使用 UiTable 轻量结构）');
         },
 
         enterRoom(tableId: number, gameNo: string) {
@@ -596,14 +692,58 @@ export const useDgWsStore = defineStore('dgWs', {
             this.sendPacket(19, { tableId, type: 1 });
             this.sendPacket(4, { tableId, type: 1, seat: -1 });
         },
-        encryptWithKey(str: string, keyStr: string): string {
-            const key = CryptoJS.enc.Utf8.parse(keyStr.trim());
-            const enc = CryptoJS.TripleDES.encrypt(str, key, {
+        // 把 Dart 的 _normalizeTripleDesKey 一比一搬过来
+        normalizeTripleDesKey(rawKey: string): CryptoJS.lib.WordArray {
+            // 1. 先拿到 UTF-8 字节
+            const encoder = new TextEncoder();
+            const source = encoder.encode(rawKey); // Uint8Array
+
+            let keyBytes: Uint8Array;
+
+            if (source.length === 0) {
+                // 长度为 0：24 个 0
+                keyBytes = new Uint8Array(24); // 默认就是 0
+            } else if (source.length === 24) {
+                // 长度为 24：原样
+                keyBytes = source;
+            } else if (source.length > 24) {
+                // 长度 > 24：截前 24
+                keyBytes = source.slice(0, 24);
+            } else {
+                // 长度 < 24：循环填充到 24
+                keyBytes = new Uint8Array(24);
+                for (let i = 0; i < 24; i++) {
+                    keyBytes[i] = source[i % source.length]!;
+                }
+            }
+
+            // 2. 把 Uint8Array 转成 CryptoJS 的 WordArray
+            const words: number[] = [];
+            for (let i = 0; i < keyBytes.length; i += 4) {
+                words.push(
+                    (keyBytes[i]! << 24) |
+                    (keyBytes[i + 1]! << 16) |
+                    (keyBytes[i + 2]! << 8) |
+                    (keyBytes[i + 3]!)
+                );
+            }
+
+            return CryptoJS.lib.WordArray.create(words, keyBytes.length);
+        },
+
+        dgEncryptToken(plainText: string, keyStr: string): string {
+            // 这里用 Utf8 直接当作 key 的字节（等价于 Dart 里 utf8 bytes 再做 3DES）
+            const key = this.normalizeTripleDesKey(keyStr);
+
+            const enc = CryptoJS.TripleDES.encrypt(plainText, key, {
                 mode: CryptoJS.mode.ECB,
                 padding: CryptoJS.pad.Pkcs7,
             });
+
+            // CryptoJS 默认 toString() 就是 base64，等价于 Dart 里的 base64Encode
             return enc.toString();
         },
+
         // 转成 Android 的 key 规范：首字母小写
         normalizeBetKey(source: string): string {
             if (!source) return source;
@@ -611,12 +751,12 @@ export const useDgWsStore = defineStore('dgWs', {
             return source[0]!.toLowerCase() + source.slice(1);
         },
 
-        // 只下注一个区域的 betData（方便你先跑通）
+        // 只下注一个区域的 betData
         buildSingleBetData(params: {
-            key: string;       // 比如 "P", "Banker", "Tie"
-            amount: number;    // 金额
-            table: string;     // info.table, Android 是 "3"
-            roadType: string;  // info.roadType，Android 用 table.seat
+            key: string; // 比如 "P", "Banker", "Tie"
+            amount: number; // 金额
+            table: string; // info.table
+            roadType: string; // info.roadType
         }): any {
             const betData: any = {};
             const normKey = this.normalizeBetKey(params.key.trim());
@@ -628,8 +768,11 @@ export const useDgWsStore = defineStore('dgWs', {
                 table: params.table,
                 roadType: params.roadType,
             });
+            console.log(betData, '--betData');
+
             return betData;
         },
+
         /** 低层：和 Android DgWsService.send6Bet 的协议完全一样 */
         sendDgBet(params: {
             tableId: number;
@@ -660,9 +803,10 @@ export const useDgWsStore = defineStore('dgWs', {
                 keyLen > 8 ? betKey.slice(8, Math.min(16, keyLen)) : betKey;
 
             const hashInput = String(tableId) + gameNo + userName + suffixKey;
-            const md5 = CryptoJS.MD5(hashInput).toString();
+            const md5 = CryptoJS.MD5(hashInput).toString(); // 等价 md5Hex
 
-            const encBetData = this.encryptWithKey(
+            // 对标 jsonEncode(betData).dgEncryptToken(key: betKey)
+            const encBetData = this.dgEncryptToken(
                 JSON.stringify(betData),
                 betKey,
             );
@@ -684,34 +828,54 @@ export const useDgWsStore = defineStore('dgWs', {
                 `📤 发送下注 cmd=6, payload.list=${JSON.stringify(list)}`,
             );
         },
+
+        /**
+         * 高层：单点下注
+         * - gameNo / roadType 可以不传，会自动从 1002 / 5015 / 1015 的缓存里按 tableId 取
+         */
         placeSingleBet(params: {
             tableId: number;
-            gameNo: string;
-            betKey: string;       // 如 "P" / "Banker"
+            betKey: string; // 如 "P" / "Banker"
             amount: number;
-            roadType: number;     // 你当前桌台的 roadType
-            tableIndex?: number;  // 可以先写死 '3'，后面再对上 Android
+            gameNo?: string;
+            roadType?: number; // 不传则用 seat
+            tableIndex?: number; // info.table，可先写死 '3'
         }) {
+            const tableId = params.tableId;
+
+            // 自动补 gameNo
+            const gameNo = this.dgGameNoForBet(tableId) ?? params.gameNo
+            if (!gameNo) {
+                throw new Error(
+                    `找不到 tableId=${tableId} 的 gameNo，请确认已收到 1002/5015/1015`,
+                );
+            }
+
+            // 自动补 roadType：现在按你说的用 seat，当成 roadType
+            const roadTypeNum = this.dgSeatForBet(tableId) ?? null
+            if (!roadTypeNum) {
+                return alert(`找不到 tableId=${tableId} 的 roadType，请确认已收到 5015/1015`);
+            }
+            // const roadTypeNum = this.dgObjectTypeForTable(tableId);
             const tableStr = String(params.tableIndex ?? 3); // Android 现在写死 "3"
-            const roadTypeStr = String(params.roadType);
+            const roadTypeStr = String(roadTypeNum);
 
             const betData = this.buildSingleBetData({
-                key: params.betKey,
+                key: 'player',
                 amount: params.amount,
                 table: tableStr,
                 roadType: roadTypeStr,
             });
 
             // 先 enterRoom 再下注，和 Android 一致
-            this.enterRoom(params.tableId, params.gameNo);
+            this.enterRoom(tableId, gameNo);
             setTimeout(() => {
                 this.sendDgBet({
-                    tableId: params.tableId,
-                    gameNo: params.gameNo,
+                    tableId,
+                    gameNo,
                     betData,
                 });
-            }, 2000)
+            }, 2000);
         },
-
     },
 });

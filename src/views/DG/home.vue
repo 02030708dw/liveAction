@@ -157,7 +157,7 @@
         </div>
 
         <textarea readonly :value="wsStore.logs.join('\n')"
-          class="w-full h-52 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-100 p-2 font-mono outline-none"></textarea>
+          class="w-full h-100 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-100 p-2 font-mono outline-none"></textarea>
       </div>
     </section>
 
@@ -177,7 +177,7 @@ import DgTables from './components/DgTables.vue';
 const authStore = useAuthStore();
 const wsStore = useDgWsStore();
 
-const username = ref('member18');
+const username = ref('member10');
 const password = ref('a123456');
 
 const eg_code = ref('1');
