@@ -220,8 +220,10 @@ export const useWmWsStore = defineStore("wmWs", {
                 );
                 if (filtered.length === 0) return;
 
-                const payload = { type: "wmGameTableInfos", data: filtered };
-                try { this.phpClientSocket.send(JSON.stringify(payload)); } catch (err) {
+                const payload = { type: "wmGameTableInfos", data: filtered};
+                try { 
+                    this.phpClientSocket.send(JSON.stringify(payload)); 
+                } catch (err) {
                     console.error("推送过滤后的 game101GroupInfo 失败:", err);
                 }
             }, 200) as unknown as number;
@@ -446,6 +448,7 @@ export const useWmWsStore = defineStore("wmWs", {
                     const d = msg.data as { gameID: number; groupID: number; gameStage: number };
                     if (d.gameID !== 101) return;
                     const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    
                     if (!target) return;
                     target.gameStage = d.gameStage;
                     break;
@@ -467,7 +470,7 @@ export const useWmWsStore = defineStore("wmWs", {
 
                         groupID: oldItem.groupID,
                         tableStatus: lean.tableStatus ?? oldItem.tableStatus,
-                        gameStage: 1,
+                        // gameStage: 1,
 
                         tableDtExtend: lean.tableDtExtend ?? oldItem.tableDtExtend,
 

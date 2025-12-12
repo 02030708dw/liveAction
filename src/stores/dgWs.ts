@@ -24,6 +24,7 @@ import {
     decodeDgMsgVm86,
     PublicBean,
     buildUiTableData,
+    extractUserNameFromMapped
 } from '@/utils/dgDebugDecode';
 import { useAuthStore } from './dgAuth';
 
@@ -380,26 +381,25 @@ export const useDgWsStore = defineStore('dgWs', {
                     this.pushState.list = Array.isArray(mapped.list)
                         ? mapped.list
                         : [];
-
-                    // 1) 提取 userName
-                    if (mapped.userName) {
-                        this.userName = mapped.userName;
+                    // 1) 用 Android 同款方式从 10086 里挖 userName
+                    const extracted = extractUserNameFromMapped(mapped);
+                    if (extracted) {
+                        this.userName = extracted;
                     } else {
+                        // 兜底：用自己平台的账号（比如 member10php）
                         const authStore = useAuthStore();
                         this.userName = authStore.userName || '';
                     }
-
-                    // 2) 提取下注专用 key：参照 Android 的 normalizedEntries 逻辑
+                    
+                    // 2) 提取下注专用 key：和 Android normalizedEntries 一致
                     const entries = (this.pushState.list || [])
                         .map((x: any) => (x == null ? '' : String(x)))
                         .filter((s: string) => s.length > 0);
-
                     if (entries.length > 1) {
                         this.betEncryptKey = entries[1]!;
                     } else if (entries.length === 1) {
                         this.betEncryptKey = entries[0]!;
                     }
-
                     this.log(
                         `🎲 cmd=10086 userName=${this.userName} betEncryptKey=${this.betEncryptKey} list=${JSON.stringify(
                             this.pushState.list,
