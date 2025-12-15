@@ -643,13 +643,19 @@ export const useDgWsStore = defineStore('dgWs', {
             wsPush.onclose = () => {
                 wsPush = null;
 
-                if (pushReconnectTimer != null) {
-                    clearTimeout(pushReconnectTimer);
-                }
+                // 已经安排了重连，就别重复安排
+                if (pushReconnectTimer) return;
+
                 pushReconnectTimer = window.setTimeout(() => {
                     pushReconnectTimer = null;
+
+                    // 防止没真正断开/已有连接又重连
+                    if (wsPush && (wsPush.readyState === WebSocket.CONNECTING || wsPush.readyState === WebSocket.OPEN)) {
+                        return;
+                    }
+
                     this.connectPushWS();
-                }, 2000);
+                }, 5000);
             };
 
             wsPush.onerror = () => {
