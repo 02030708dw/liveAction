@@ -226,7 +226,7 @@ export const useWmWsStore = defineStore("wmWs", {
                 } catch (err) {
                     console.error("推送过滤后的 game101GroupInfo 失败:", err);
                 }
-            }, 200) as unknown as number;
+            }, 500) as unknown as number;
         },
 
         /** 停止推送 */

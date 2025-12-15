@@ -600,7 +600,7 @@ export const useDgWsStore = defineStore('dgWs', {
                 this.pushTimer = null;
                 this.rebuildUiTables(); // 更新前端桌台 UI
                 this.pushCombined(); // 推送给后端 WS
-            }, 60);
+            }, 500);
         },
 
         /** 用 pushState 重建所有桌台的 UI 数据 */
