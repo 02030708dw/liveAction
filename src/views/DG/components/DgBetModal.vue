@@ -164,7 +164,7 @@ const submitBet = () => {
             tableId: idNum,
             gameNo: betGameNo.value,
             betKey: "B",
-            amount: 50,
+            amount: 100,
             roadType: betRoadType.value,
             tableIndex: betTableIndex.value ?? 3,
         });
