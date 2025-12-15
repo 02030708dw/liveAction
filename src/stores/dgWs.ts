@@ -390,7 +390,7 @@ export const useDgWsStore = defineStore('dgWs', {
                         const authStore = useAuthStore();
                         this.userName = authStore.userName || '';
                     }
-                    
+
                     // 2) 提取下注专用 key：和 Android normalizedEntries 一致
                     const entries = (this.pushState.list || [])
                         .map((x: any) => (x == null ? '' : String(x)))
@@ -852,16 +852,15 @@ export const useDgWsStore = defineStore('dgWs', {
             }
 
             // 自动补 roadType：现在按你说的用 seat，当成 roadType
-            const roadTypeNum = this.dgSeatForBet(tableId) ?? null
-            if (!roadTypeNum) {
-                return alert(`找不到 tableId=${tableId} 的 roadType，请确认已收到 5015/1015`);
-            }
+            const roadTypeNum = this.dgSeatForBet(tableId)
+            // if (!roadTypeNum) {
+            //     return alert(`找不到 tableId=${tableId} 的 roadType，请确认已收到 5015/1015`);
+            // }
             // const roadTypeNum = this.dgObjectTypeForTable(tableId);
             const tableStr = String(params.tableIndex ?? 3); // Android 现在写死 "3"
             const roadTypeStr = String(roadTypeNum);
-
             const betData = this.buildSingleBetData({
-                key: 'player',
+                key: params.betKey,
                 amount: params.amount,
                 table: tableStr,
                 roadType: roadTypeStr,
@@ -875,7 +874,7 @@ export const useDgWsStore = defineStore('dgWs', {
                     gameNo,
                     betData,
                 });
-            }, 2000);
+            }, 100);
         },
     },
 });

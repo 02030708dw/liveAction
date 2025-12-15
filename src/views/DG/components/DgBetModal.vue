@@ -163,8 +163,8 @@ const submitBet = () => {
         wsStore.placeSingleBet({
             tableId: idNum,
             gameNo: betGameNo.value,
-            betKey: "B",
-            amount: 100,
+            betKey: "player",
+            amount: betPlayer.value,
             roadType: betRoadType.value,
             tableIndex: betTableIndex.value ?? 3,
         });

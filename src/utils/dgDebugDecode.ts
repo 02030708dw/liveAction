@@ -751,68 +751,68 @@ export function buildUiTableData(
 
 
 // ======== Android 风格的用户名解析工具 =========
- 
+
 function asNonEmptyString(value: any): string | null {
-  if (value === null || value === undefined) return null;
-  const s = String(value).trim();
-  return s.length ? s : null;
+	if (value === null || value === undefined) return null;
+	const s = String(value).trim();
+	return s.length ? s : null;
 }
- 
+
 function decodeToObjectMap(src: any): Record<string, any> | null {
-  if (!src) return null;
-  if (typeof src === 'object') {
-    return src as Record<string, any>;
-  }
-  if (typeof src === 'string' && src.trim()) {
-    try {
-      const parsed = JSON.parse(src);
-      if (parsed && typeof parsed === 'object') {
-        return parsed as Record<string, any>;
-      }
-    } catch {
-      return null;
-    }
-  }
-  return null;
+	if (!src) return null;
+	if (typeof src === 'object') {
+		return src as Record<string, any>;
+	}
+	if (typeof src === 'string' && src.trim()) {
+		try {
+			const parsed = JSON.parse(src);
+			if (parsed && typeof parsed === 'object') {
+				return parsed as Record<string, any>;
+			}
+		} catch {
+			return null;
+		}
+	}
+	return null;
 }
- 
+
 function extractParsedVm(mapped: any): Record<string, any> | null {
-  const parsed = mapped?.parsedVm86 ?? mapped?.parsed;
-  if (parsed && typeof parsed === 'object') {
-    return parsed as Record<string, any>;
-  }
-  return null;
+	const parsed = mapped?.parsedVm86 ?? mapped?.parsed;
+	if (parsed && typeof parsed === 'object') {
+		return parsed as Record<string, any>;
+	}
+	return null;
 }
- 
+
 function extractRawPayload(mapped: any): Record<string, any> | null {
-  const raw = mapped?.rawPayload;
-  if (raw && typeof raw === 'object') {
-    return raw as Record<string, any>;
-  }
-  return null;
+	const raw = mapped?.rawPayload;
+	if (raw && typeof raw === 'object') {
+		return raw as Record<string, any>;
+	}
+	return null;
 }
- 
+
 function extractUserNameFromObject(source: any): string | null {
-  const obj = decodeToObjectMap(source);
-  if (!obj) return null;
- 
-  // 先从 object.username / object.userName 里拿
-  const direct = asNonEmptyString(obj.username ?? obj.userName);
-  if (direct) return direct;
- 
-  // 再从 object.member.xxx 里拿
-  const member = obj.member;
-  if (member && typeof member === 'object') {
-    const memberObj = member as Record<string, any>;
-    const u1 = asNonEmptyString(memberObj.username ?? memberObj.userName);
-    if (u1) return u1;
-    const nick = asNonEmptyString(memberObj.nickname);
-    if (nick) return nick;
-  }
- 
-  return null;
+	const obj = decodeToObjectMap(source);
+	if (!obj) return null;
+
+	// 先从 object.username / object.userName 里拿
+	const direct = asNonEmptyString(obj.username ?? obj.userName);
+	if (direct) return direct;
+
+	// 再从 object.member.xxx 里拿
+	const member = obj.member;
+	if (member && typeof member === 'object') {
+		const memberObj = member as Record<string, any>;
+		const u1 = asNonEmptyString(memberObj.username ?? memberObj.userName);
+		if (u1) return u1;
+		const nick = asNonEmptyString(memberObj.nickname);
+		if (nick) return nick;
+	}
+
+	return null;
 }
- 
+
 /**
 * 完整版用户名提取，等价 Android 的 _extractUserName
 * 按顺序从：
@@ -823,29 +823,29 @@ function extractUserNameFromObject(source: any): string | null {
 * 里找
 */
 export function extractUserNameFromMapped(mapped: any): string | null {
-  // 1) 直接字段
-  const direct = asNonEmptyString(mapped?.userName);
-  if (direct) return direct;
- 
-  // 2) parsedVm86 / parsed 里的 userName
-  const parsedVm = extractParsedVm(mapped);
-  const parsedUser = asNonEmptyString(parsedVm?.userName);
-  if (parsedUser) return parsedUser;
- 
-  // 3) rawPayload 里的 userName
-  const rawPayload = extractRawPayload(mapped);
-  const rawUser = asNonEmptyString(rawPayload?.userName);
-  if (rawUser) return rawUser;
- 
-  // 4) 各种 object 里挖
-  const fromParsedObj = extractUserNameFromObject(parsedVm?.object);
-  if (fromParsedObj) return fromParsedObj;
- 
-  const fromRawObj = extractUserNameFromObject(rawPayload?.object);
-  if (fromRawObj) return fromRawObj;
- 
-  const fromDataObj = extractUserNameFromObject(mapped?.object);
-  if (fromDataObj) return fromDataObj;
- 
-  return null;
+	// 1) 直接字段
+	const direct = asNonEmptyString(mapped?.userName);
+	if (direct) return direct;
+
+	// 2) parsedVm86 / parsed 里的 userName
+	const parsedVm = extractParsedVm(mapped);
+	const parsedUser = asNonEmptyString(parsedVm?.userName);
+	if (parsedUser) return parsedUser;
+
+	// 3) rawPayload 里的 userName
+	const rawPayload = extractRawPayload(mapped);
+	const rawUser = asNonEmptyString(rawPayload?.userName);
+	if (rawUser) return rawUser;
+
+	// 4) 各种 object 里挖
+	const fromParsedObj = extractUserNameFromObject(parsedVm?.object);
+	if (fromParsedObj) return fromParsedObj;
+
+	const fromRawObj = extractUserNameFromObject(rawPayload?.object);
+	if (fromRawObj) return fromRawObj;
+
+	const fromDataObj = extractUserNameFromObject(mapped?.object);
+	if (fromDataObj) return fromDataObj;
+
+	return null;
 }
