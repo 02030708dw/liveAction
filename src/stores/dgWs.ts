@@ -74,7 +74,7 @@ let wsPush: WebSocket | null = null;
 let pushQueue: string[] = [];
 let pushReconnectTimer: number | null = null;
 let pushStopped = false;
-let pushConnSeq = 0;
+// let pushConnSeq = 0;
 
 const PUSH_RECONNECT_DELAY = 5000;
 const MAX_PUSH_QUEUE = 50;
@@ -376,7 +376,7 @@ export const useDgWsStore = defineStore('dgWs', {
             const url = `wss://hwdata-new.taxyss.com/?sign=${sign}`;
             this.log(`连接到: ${url}`);
 
-            const seq = ++this.gameConnSeq;
+            // const seq = ++this.gameConnSeq;
             const ws = new WebSocket(url);
             ws.binaryType = 'arraybuffer';
 
@@ -727,7 +727,7 @@ export const useDgWsStore = defineStore('dgWs', {
                 pushReconnectTimer = null;
             }
 
-            const seq = ++pushConnSeq;
+            // const seq = ++pushConnSeq;
             const ws = new WebSocket(PUSH_WS_URL);
             wsPush = ws;
 
