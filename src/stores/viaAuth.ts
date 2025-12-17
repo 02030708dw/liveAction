@@ -87,6 +87,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
         lastBetResult: ViaBetRespData | null;
         //大厅房间整合数据
         lobbyRooms: ViaLobbyRoom[];
+        lobbyRoomById: Record<string, ViaLobbyRoom>;
     } => ({
         running: false,
         currentStepIndex: -1,
@@ -116,6 +117,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
         lastBetResult: null,
 
         lobbyRooms: [],
+        lobbyRoomById: {},
     }),
 
     actions: {
@@ -146,6 +148,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
             this.videoStream = null;
 
             this.lobbyRooms = [];
+            this.lobbyRoomById = {};
         },
 
         /**
@@ -272,12 +275,12 @@ export const useViaAuthStore = defineStore('viaAuth', {
                     if (!this.loginData?.token) {
                         throw new Error('还没有登录成功，缺少 VIA token');
                     }
-                    if (!this.tableCurrencyMappingData?.all?.length) {
+                    if (!this.tableCurrencyMappingData?.gameTypeMappings?.['BACCARAT']?.length) {
                         throw new Error('缺少桌台列表，请先完成 No.9 桌台映射');
                     }
 
                     // 从 No.9 的 all 中取出所有 tableId
-                    const tableIds = this.tableCurrencyMappingData.all.map(t => t.tableId);
+                    const tableIds = this.tableCurrencyMappingData.gameTypeMappings['BACCARAT']!.map(t => t.tableId);
 
                     // 这里的 18 就是你示例里用的 xOffsetFromTail
                     const roads = await apiGetRoads(this.loginData.token, tableIds, 18);
@@ -291,12 +294,12 @@ export const useViaAuthStore = defineStore('viaAuth', {
                     if (!this.loginData?.token) {
                         throw new Error('还没有登录成功，缺少 VIA token');
                     }
-                    if (!this.tableCurrencyMappingData?.tables) {
+                    if (!this.tableCurrencyMappingData?.gameTypeMappings?.['BACCARAT']?.length) {
                         throw new Error('缺少桌台信息，请先完成 No.9 桌台映射');
                     }
 
                     // 从 No.9 的 tables 里自动构造请求项
-                    const items = Object.values(this.tableCurrencyMappingData.tables).map(
+                    const items = Object.values(this.tableCurrencyMappingData.gameTypeMappings['BACCARAT']!).map(
                         (t) => ({
                             tableId: t.tableId,
                             gameCode: t.gameCode,
@@ -320,7 +323,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
                     }
 
                     // 复用 No.9 的 tableId 列表
-                    const tableIds = this.tableCurrencyMappingData.all.map((t) => t.tableId);
+                    const tableIds = this.tableCurrencyMappingData.gameTypeMappings['BACCARAT']!.map((t) => t.tableId);
                     const data = await apiGetDealerEvents(this.loginData.token, tableIds);
 
                     this.dealerEvents = data;
@@ -333,12 +336,12 @@ export const useViaAuthStore = defineStore('viaAuth', {
                     if (!this.loginData?.token) {
                         throw new Error('还没有登录成功，缺少 VIA token');
                     }
-                    if (!this.tableCurrencyMappingData?.all?.length) {
+                    if (!this.tableCurrencyMappingData?.gameTypeMappings?.['BACCARAT']?.length) {
                         throw new Error('缺少桌台列表，请先完成 No.9 桌台映射');
                     }
 
                     // 复用 No.9 里的 tableId 列表
-                    const tableIds = this.tableCurrencyMappingData.all.map((t) => t.tableId);
+                    const tableIds = this.tableCurrencyMappingData.gameTypeMappings['BACCARAT']!.map((t) => t.tableId);
 
                     const data = await apiGetCurrentBet(this.loginData.token, tableIds);
 
@@ -471,9 +474,10 @@ export const useViaAuthStore = defineStore('viaAuth', {
             }
 
             // ✅ 只从 lobbyRooms 里拿当前局信息
-            const room = this.lobbyRooms.find(
-                (r) => String(r.tableId) === String(tableId),
-            );
+            const room = this.lobbyRooms
+                .find(
+                    (r) => String(r.tableId) === String(tableId),
+                );
 
             if (!room) {
                 throw new Error(`未找到桌号 ${tableId} 的房间信息，请先刷新大厅`);
@@ -553,11 +557,31 @@ export const useViaAuthStore = defineStore('viaAuth', {
             const mapping = this.tableCurrencyMappingData as any;
             if (!mapping || !mapping.tables) {
                 this.lobbyRooms = [];
+                this.lobbyRoomById = {};
                 return;
             }
 
-            const tables: Record<string, any> = mapping.tables;
-            const all: { tableId: string; order: number }[] = mapping.all || [];
+            const tablesObj: Record<string, any> = mapping.tables;
+
+            // ✅ 先把 tables 变成 tableId -> table 的 map（避免 tablesObj 的 key 不是 tableId）
+            const tableMapById: Record<string, any> = {};
+            Object.values(tablesObj).forEach((t: any) => {
+                if (!t) return;
+                tableMapById[String(t.tableId)] = t;
+            });
+
+            // ✅ 使用 gameTypeMappings['BACCARAT'] 来控制顺序（你要求的）
+            const baccaratList: { tableId: string; order: number }[] =
+                mapping.gameTypeMappings?.['BACCARAT'] ??
+                mapping.gameTypeMappings?.BACCARAT ??
+                [];
+
+            const ordered = (baccaratList.length
+                ? baccaratList
+                : Object.values(tableMapById).map((t: any, idx: number) => ({
+                    tableId: String(t.tableId),
+                    order: idx,
+                }))) as { tableId: string; order: number }[];
 
             // No.10 牌路
             const roadArr: any[] =
@@ -594,22 +618,15 @@ export const useViaAuthStore = defineStore('viaAuth', {
 
             const rooms: ViaLobbyRoom[] = [];
 
-            // 使用 No.9 的 all 来控制顺序（和后台排序一致）
-            const ordered = (all.length
-                ? all
-                : Object.values(tables).map((t: any, idx: number) => ({
-                    tableId: String(t.tableId),
-                    order: idx,
-                }))) as { tableId: string; order: number }[];
-
             ordered
                 .slice()
                 .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                 .forEach(({ tableId }) => {
-                    const t = tables[tableId];
+                    const id = String(tableId);
+
+                    const t = tableMapById[id];
                     if (!t) return;
 
-                    const id = String(tableId);
                     const road = roadMap.get(id);
                     const bet = betMap.get(id);
                     const ev = dealerMap.get(id);
@@ -672,7 +689,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
                         tableStatus: ev?.tableStatus,
                         iTime: ev?.iTime,
                         drawId: ev?.drawId,
-                        roundStartTime: ev?.roundStartTime,               // ✅ 下注用
+                        roundStartTime: ev?.roundStartTime,                 // ✅ 下注用
                         roundStartTimeOriginal: ev?.roundStartTimeOriginal, // ✅ 推送用
 
                         deliverTime: ev?.deliverTime,
@@ -688,30 +705,43 @@ export const useViaAuthStore = defineStore('viaAuth', {
                         totalBetAmount,
                         betPlayers,
 
-                        // 可选：如果你想一进来就有 dealerEventType
                         dealerEventType: ev?.dealerEventType,
+
+                        // 牌信息
+                        tableCards: t.tableCards,
+                        tableCardStampTimes: t.tableCardStampTimes,
                     };
 
                     rooms.push(room);
                 });
 
             this.lobbyRooms = rooms;
+
+            // 删除旧数据
+            this.roadsData = null;
+            this.betCalcData = null;
+            this.dealerEvents = null;
+
+            // 构建 map
+            const map: Record<string, any> = {};
+            for (const r of rooms) map[String(r.tableId)] = r;
+            this.lobbyRoomById = map;
+
             this.log?.(`大厅房间数据已构建，共 ${rooms.length} 个桌台`);
         },
 
         updateLobbyRoom(tableId: string, patch: Partial<LobbyRoomMutableFields>) {
             const id = String(tableId);
-            const room = this.lobbyRooms.find(
-                (r) => String(r.tableId) === id,
-            );
 
+            const room = this.lobbyRoomById[id];
             if (!room) {
                 this.log?.(`updateLobbyRoom: 未找到 tableId=${id} 对应房间`);
                 return;
             }
 
-            Object.assign(room, patch);
+            this.lobbyRoomById[id] = { ...room, ...patch };
         }
+
 
     },
 });

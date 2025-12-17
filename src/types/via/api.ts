@@ -178,7 +178,17 @@ export interface ViaTableSummary {
 /** 按 gameType 分组的桌子列表：
  *  BACCARAT / DICE / DRAGON_TIGER / ... → TableSummary[]
  */
-export type ViaGameTypeMappings = Record<string, ViaTableSummary[]>;
+export type ViaGameType =
+    | 'BACCARAT'
+    | 'DICE'
+    | 'DRAGON_TIGER'
+    | 'FPC'
+    | 'LOTTO_POKER'
+    | 'MARBLE_RACE'
+    | 'POKDENG'
+    | 'XOC_DIA';
+
+type ViaGameTypeMappings = Partial<Record<ViaGameType, ViaTableSummary[]>>;
 
 /** 多语言桌台名称 */
 export interface ViaTableNameLocales {

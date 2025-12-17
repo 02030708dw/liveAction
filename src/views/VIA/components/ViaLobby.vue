@@ -61,7 +61,7 @@ const gameCodes = computed(() => {
 });
 
 const filteredRooms = computed(() => {
-    if (!filterGameCode.value) return rooms.value;
+    if (!filterGameCode.value) return rooms.value.filter((r) => r.tableStatus === 1);
     return rooms.value.filter((r) => r.gameCode === filterGameCode.value);
 });
 

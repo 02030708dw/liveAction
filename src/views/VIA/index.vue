@@ -50,7 +50,7 @@
         </ul>
 
         <hr />
-        <ViaLobby />
+        <!-- <ViaLobby /> -->
         <h2>日志</h2>
         <pre class="logs"><code v-for="(line, i) in logs" :key="i">{{ line }}</code></pre>
 
@@ -65,7 +65,7 @@ import { STEP_ORDER, type StepKey } from '@/types/via/flow';
 import { useViaAuthStore } from '@/stores/viaAuth';
 
 
-import ViaLobby from './components/ViaLobby.vue';
+// import ViaLobby from './components/ViaLobby.vue';
 import ViaWsLogs from './components/ViaWsLogs.vue';
 import ViaWsLoginForm from './components/ViaWsLoginForm.vue';
 

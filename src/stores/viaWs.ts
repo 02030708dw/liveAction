@@ -151,7 +151,7 @@ export const useViaWsStore = defineStore('viaWs', {
         heartbeatTimer: null,
         authToken: null,
 
-        debugTableId: '851',
+        debugTableId: '814',
         lastUrl: null,
         reconnecting: false,
         reconnectTimer: null,
@@ -442,7 +442,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 '\0';
 
             this.ws.send(raw);
-            this.log(`📤 发送 STOMP 帧: ${frame.command} ${JSON.stringify(headers)}`);
+            // this.log(`📤 发送 STOMP 帧: ${frame.command} ${JSON.stringify(headers)}`);
         },
 
         // 生成一个订阅 id
@@ -463,7 +463,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 },
             });
             this.subscriptions[subId] = destination;
-            this.log(`✅ 订阅成功 id=${subId}, destination=${destination}`);
+            // this.log(`✅ 订阅成功 id=${subId}, destination=${destination}`);
             return subId;
         },
 
@@ -503,7 +503,7 @@ export const useViaWsStore = defineStore('viaWs', {
             for (const frameText of frames) {
                 const frame = this.parseStompFrame(frameText);
                 if (!frame) {
-                    this.log(`📩 收到未知数据: ${frameText.slice(0, 200)}...`);
+                    // this.log(`📩 收到未知数据: ${frameText.slice(0, 200)}...`);
                     continue;
                 }
 
@@ -555,7 +555,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 }
 
 
-                this.log(`📩 收到 STOMP 帧: ${frame.command}`);
+                // this.log(`📩 收到 STOMP 帧: ${frame.command}`);
             }
         },
         async handleTokenInvalidError(msgHeader: string, bodyText: string) {
@@ -567,7 +567,7 @@ export const useViaWsStore = defineStore('viaWs', {
             if (!this.lastLoginUser || !this.lastLoginPassword) {
                 this.tokenInvalid = true;
                 this.status = 'Token 失效，请重新登录';
-                this.log('❌ 无 lastLoginUser/lastLoginPassword，无法自动重登录');
+                // this.log('❌ 无 lastLoginUser/lastLoginPassword，无法自动重登录');
                 this.stopLobbyPush();
                 this.clearReconnectTimer();
                 this.clearHeartbeat();
@@ -582,7 +582,7 @@ export const useViaWsStore = defineStore('viaWs', {
             }
 
             if (this.reloginInProgress) {
-                this.log('⏳ 已在自动重登录中，忽略重复触发');
+                // this.log('⏳ 已在自动重登录中，忽略重复触发');
                 return;
             }
 
@@ -607,25 +607,25 @@ export const useViaWsStore = defineStore('viaWs', {
             this.authToken = null;
 
             try {
-                this.log('🔐 [AutoRelogin] 重新登录中...');
+                // this.log('🔐 [AutoRelogin] 重新登录中...');
                 await this.login(this.lastLoginUser, this.lastLoginPassword);
 
                 if (!this.lastUrl) {
-                    this.log('❌ [AutoRelogin] lastUrl 为空，无法重连 WS');
+                    // this.log('❌ [AutoRelogin] lastUrl 为空，无法重连 WS');
                     this.status = '自动重登录失败，请手动重试';
                     return;
                 }
 
-                this.log(`🔁 [AutoRelogin] 使用新 token 重连 WS: ${this.lastUrl}`);
+                // this.log(`🔁 [AutoRelogin] 使用新 token 重连 WS: ${this.lastUrl}`);
                 this.connect(this.lastUrl);
 
                 await this.waitForStompConnected();
 
-                this.log('✅ [AutoRelogin] STOMP 已重新连接');
+                // this.log('✅ [AutoRelogin] STOMP 已重新连接');
 
                 // 重连后自动恢复订阅
                 if (this.autoAllSubscribed) {
-                    this.log('🔁 [AutoRelogin] 恢复自动订阅的各频道');
+                    // this.log('🔁 [AutoRelogin] 恢复自动订阅的各频道');
                     this.sendNoRequest(2);
                     this.sendNoRequest(3);
                     this.sendNoRequest(4);
@@ -650,10 +650,10 @@ export const useViaWsStore = defineStore('viaWs', {
 
                 this.tokenInvalid = false;
                 this.status = '已自动重新登录并恢复连接';
-                this.log('✅ [AutoRelogin] 完成自动重登录 + 重连 + 恢复订阅');
+                // this.log('✅ [AutoRelogin] 完成自动重登录 + 重连 + 恢复订阅');
             } catch (err: any) {
                 this.status = '自动重登录失败，请手动重新登录';
-                this.log(`❌ [AutoRelogin] 失败: ${err?.message || err}`);
+                // this.log(`❌ [AutoRelogin] 失败: ${err?.message || err}`);
             } finally {
                 this.reloginInProgress = false;
             }
@@ -663,15 +663,15 @@ export const useViaWsStore = defineStore('viaWs', {
             // 一旦你调用过 sendNoRequest(13/15/16)，这些 flag 变成 true，
             // 重连后就会自动重新订阅
             if (this.autoSubBetCalc) {
-                this.log('🔁 重连后恢复 No.13 下注统计订阅');
+                // this.log('🔁 重连后恢复 No.13 下注统计订阅');
                 this.subscribeBetCalcForAllTables();
             }
             if (this.autoSubDealerEvent) {
-                this.log('🔁 重连后恢复 No.15 dealerEvent 订阅');
+                // this.log('🔁 重连后恢复 No.15 dealerEvent 订阅');
                 this.subscribeDealerEventForAllTables();
             }
             if (this.autoSubRoad) {
-                this.log('🔁 重连后恢复 No.16 road 订阅');
+                // this.log('🔁 重连后恢复 No.16 road 订阅');
                 this.subscribeRoadForAllTables();
             }
         },
@@ -709,12 +709,12 @@ export const useViaWsStore = defineStore('viaWs', {
             const bodyText = frame.body || '';
 
             if (ENABLE_VERBOSE_MESSAGE_LOG) {
-                this.log(
-                    `📩 MESSAGE from ${destination || 'unknown'}: ${bodyText.slice(
-                        0,
-                        200,
-                    )}...`,
-                );
+                // this.log(
+                //     `📩 MESSAGE from ${destination || 'unknown'}: ${bodyText.slice(
+                //         0,
+                //         200,
+                //     )}...`,
+                // );
             }
 
             let payload: any = bodyText;
@@ -755,7 +755,7 @@ export const useViaWsStore = defineStore('viaWs', {
             this.log(`➡️ [发送请求 No.${no} ${title}]`);
 
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-                this.log('❌ WS 未连接，无法发送该请求');
+                // this.log('❌ WS 未连接，无法发送该请求');
                 return;
             }
 
@@ -782,7 +782,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 3: {
                     // No.3：订阅玩家余额变动
                     if (!this.vendorId || !this.vendorPlayerId) {
-                        this.log('❌ No.3 订阅失败：缺少 vendorId 或 vendorPlayerId，请先完成登录');
+                        // this.log('❌ No.3 订阅失败：缺少 vendorId 或 vendorPlayerId，请先完成登录');
                         return;
                     }
 
@@ -797,7 +797,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 4: {
                     // No.4：玩家资料变化
                     if (!this.vendorId || !this.vendorPlayerId) {
-                        this.log('❌ No.4 订阅失败：缺少 vendorId 或 vendorPlayerId，请先完成登录');
+                        // this.log('❌ No.4 订阅失败：缺少 vendorId 或 vendorPlayerId，请先完成登录');
                         return;
                     }
 
@@ -811,7 +811,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 5: {
                     // No.5：玩家登出事件（订阅玩家 logout 通知）
                     if (!this.vendorId || !this.vendorPlayerId) {
-                        this.log('❌ No.5 订阅失败：缺少 vendorId 或 vendorPlayerId，请先完成登录');
+                        // this.log('❌ No.5 订阅失败：缺少 vendorId 或 vendorPlayerId，请先完成登录');
                         return;
                     }
 
@@ -825,7 +825,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 6: {
                     // No.6：订阅广播（vendor 级）
                     if (!this.vendorId) {
-                        this.log('❌ No.6 订阅失败：缺少 vendorId，请先完成登录');
+                        // this.log('❌ No.6 订阅失败：缺少 vendorId，请先完成登录');
                         return;
                     }
 
@@ -839,7 +839,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 7: {
                     // No.7：订阅 vendor 配置变动
                     if (!this.vendorId) {
-                        this.log('❌ No.7 订阅失败：缺少 vendorId，请先完成登录');
+                        // this.log('❌ No.7 订阅失败：缺少 vendorId，请先完成登录');
                         return;
                     }
 
@@ -852,7 +852,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 8: {
                     // No.8：订阅 vendor 活动
                     if (!this.vendorId) {
-                        this.log('❌ No.8 订阅失败：缺少 vendorId，请先完成登录');
+                        // this.log('❌ No.8 订阅失败：缺少 vendorId，请先完成登录');
                         return;
                     }
 
@@ -869,7 +869,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 9: {
                     // No.9：订阅 vendor 广告
                     if (!this.vendorId) {
-                        this.log('❌ No.9 订阅失败：缺少 vendorId，请先完成登录');
+                        // this.log('❌ No.9 订阅失败：缺少 vendorId，请先完成登录');
                         return;
                     }
 
@@ -886,7 +886,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 10: {
                     // No.10：订阅游戏桌列表
                     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-                        this.log('❌ WS 未连接，无法发送 No.10 订阅游戏桌列表');
+                        // this.log('❌ WS 未连接，无法发送 No.10 订阅游戏桌列表');
                         return;
                     }
 
@@ -898,7 +898,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 }
                 case 12: {
                     // No.12：订阅游戏桌状态
-                    const destination = '/topic/table/status';
+                    const destination = '/topic/table/status/841';
                     const subId = 'sub-10'; // 对应示例里的 id:sub-10
 
                     this.subscribe(destination, subId);
@@ -914,7 +914,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 case 14: {
                     const ids = Object.keys(this.subscriptions);
                     ids.forEach((id) => this.unsubscribe(id));
-                    this.log(`🔕 No.14 已取消所有订阅，共 ${ids.length} 个`);
+                    // this.log(`🔕 No.14 已取消所有订阅，共 ${ids.length} 个`);
                     break;
                 }
                 case 15: {
@@ -931,7 +931,7 @@ export const useViaWsStore = defineStore('viaWs', {
                     break;
                 }
                 default:
-                    this.log(`⚠️ 暂未实现的请求 No.${no}`);
+                    // this.log(`⚠️ 暂未实现的请求 No.${no}`);
                     break;
             }
         },
@@ -941,7 +941,7 @@ export const useViaWsStore = defineStore('viaWs', {
             const rooms = viaAuth.lobbyRooms || [];
 
             if (!rooms.length) {
-                this.log('⚠️ subscribeBetCalcForAllTables: 当前没有 lobbyRooms，跳过订阅');
+                // this.log('⚠️ subscribeBetCalcForAllTables: 当前没有 lobbyRooms，跳过订阅');
                 return;
             }
 
@@ -958,7 +958,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 this.subscribe(destination, subId);
             });
 
-            this.log(`✅ 已为 ${rooms.length} 个桌台订阅下注统计 (No.13)`);
+            // this.log(`✅ 已为 ${rooms.length} 个桌台订阅下注统计 (No.13)`);
         },
 
         /** 给所有房间订阅 dealerEvent（No.15） */
@@ -967,7 +967,7 @@ export const useViaWsStore = defineStore('viaWs', {
             const rooms = viaAuth.lobbyRooms || [];
 
             if (!rooms.length) {
-                this.log('⚠️ subscribeDealerEventForAllTables: 当前没有 lobbyRooms，跳过订阅');
+                // this.log('⚠️ subscribeDealerEventForAllTables: 当前没有 lobbyRooms，跳过订阅');
                 return;
             }
 
@@ -983,7 +983,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 this.subscribe(destination, subId);
             });
 
-            this.log(`✅ 已为 ${rooms.length} 个桌台订阅 dealerEvent (No.15)`);
+            // this.log(`✅ 已为 ${rooms.length} 个桌台订阅 dealerEvent (No.15)`);
         },
 
         /** 给所有房间订阅 road（No.16） */
@@ -992,7 +992,7 @@ export const useViaWsStore = defineStore('viaWs', {
             const rooms = viaAuth.lobbyRooms || [];
 
             if (!rooms.length) {
-                this.log('⚠️ subscribeRoadForAllTables: 当前没有 lobbyRooms，跳过订阅');
+                // this.log('⚠️ subscribeRoadForAllTables: 当前没有 lobbyRooms，跳过订阅');
                 return;
             }
 
@@ -1008,7 +1008,7 @@ export const useViaWsStore = defineStore('viaWs', {
                 this.subscribe(destination, subId);
             });
 
-            this.log(`✅ 已为 ${rooms.length} 个桌台订阅 road (No.16)`);
+            // this.log(`✅ 已为 ${rooms.length} 个桌台订阅 road (No.16)`);
         },
         routeBusinessMessage(msg: ViaMessageEnvelope) {
             const { destination, payload } = msg;
@@ -1036,10 +1036,10 @@ export const useViaWsStore = defineStore('viaWs', {
             }
 
             // 默认：还没有专门处理的消息，先原样打日志
-            this.log(
-                `🧩 未处理的业务消息 destination=${destination}, payload=${typeof payload === 'string' ? payload : JSON.stringify(payload)
-                }`,
-            );
+            // this.log(
+            //     `🧩 未处理的业务消息 destination=${destination}, payload=${typeof payload === 'string' ? payload : JSON.stringify(payload)
+            //     }`,
+            // );
         },
         // queueLobbyRoomPatch(tableId: string | number, patch: any) {
         //     const id = String(tableId);
@@ -1068,7 +1068,7 @@ export const useViaWsStore = defineStore('viaWs', {
         //no.13
         handleBetCalculationNotification(content: any, destination?: string) {
             if (!content || typeof content !== 'object') {
-                this.log('❌ BET_CALCULATION 消息 content 为空或格式不对');
+                // this.log('❌ BET_CALCULATION 消息 content 为空或格式不对');
                 return;
             }
 
@@ -1080,9 +1080,9 @@ export const useViaWsStore = defineStore('viaWs', {
             }
 
             if (!tableId) {
-                this.log(
-                    `❌ BET_CALCULATION 无法解析 tableId，destination=${destination}`,
-                );
+                // this.log(
+                //     `❌ BET_CALCULATION 无法解析 tableId，destination=${destination}`,
+                // );
                 return;
             }
 
@@ -1108,7 +1108,7 @@ export const useViaWsStore = defineStore('viaWs', {
         //no.15
         handleDealerEventNotification(content: any, destination?: string, serverTime?: number) {
             if (!content || typeof content !== 'object') {
-                this.log('❌ DEALER_EVENT 消息 content 为空或格式不对');
+                // this.log('❌ DEALER_EVENT 消息 content 为空或格式不对');
                 return;
             }
 
@@ -1121,17 +1121,16 @@ export const useViaWsStore = defineStore('viaWs', {
             }
 
             if (!tableId) {
-                this.log(
-                    `❌ DEALER_EVENT 消息无法解析 tableId，destination=${destination}`,
-                );
+                // this.log(
+                //     `❌ DEALER_EVENT 消息无法解析 tableId，destination=${destination}`,
+                // );
                 return;
             }
 
             const id = String(tableId);
 
             const viaAuth = useViaAuthStore();
-
-            viaAuth.updateLobbyRoom(id, {
+            const patch: any = {
                 tableStatus: content.tableStatus,
                 gameRound: content.gameRound,
                 gameShoe: content.gameShoe,
@@ -1148,18 +1147,30 @@ export const useViaWsStore = defineStore('viaWs', {
 
                 dealerId: content.dealerId,
                 dealerEventType: content.dealerEventType,
-            });
+            };
 
+            // ✅ 牌信息：GP_NEW_GAME_START 不更新（防止把牌清空）
+            const dealerEventType = String(content.dealerEventType || '');
+
+            if (dealerEventType !== 'GP_NEW_GAME_START') {
+                if (Array.isArray(content.tableCards)) {
+                    patch.tableCards = content.tableCards;
+                }
+                if (Array.isArray(content.tableCardStampTimes)) {
+                    patch.tableCardStampTimes = content.tableCardStampTimes;
+                }
+            }
+            viaAuth.updateLobbyRoom(id, patch);
 
             this.tableLog(
                 id,
-                `🎲 [DEALER_EVENT] table=${id}, status=${content.tableStatus}, round=${content.gameRound}, type=${content.dealerEventType}, iTime=${content.iTime}`,
+                `🎲 [DEALER_EVENT] table=${id},patch.tableCards=${viaAuth.lobbyRoomById[id]!.tableCards} tableCards=${JSON.stringify(content.tableCards)}, tableCardStampTimes=${JSON.stringify(content.tableCardStampTimes)},dealerEventType=${content.dealerEventType}`,
             );
         },
         //no.16
         handleRoadNotification(content: any, destination?: string) {
             if (!content || typeof content !== 'object') {
-                this.log('❌ ROAD 消息 content 为空或格式不对');
+                // this.log('❌ ROAD 消息 content 为空或格式不对');
                 return;
             }
 
@@ -1169,9 +1180,9 @@ export const useViaWsStore = defineStore('viaWs', {
             }
 
             if (!tableId) {
-                this.log(
-                    `❌ ROAD 消息无法解析 tableId，destination=${destination}`,
-                );
+                // this.log(
+                //     `❌ ROAD 消息无法解析 tableId，destination=${destination}`,
+                // );
                 return;
             }
 
@@ -1199,18 +1210,18 @@ export const useViaWsStore = defineStore('viaWs', {
         /** 连接推送给后端的 WS */
         connectPushWS() {
             const url = PUSH_WS_URL;
-            this.log(`[PUSH] 连接到: ${url}`);
+            // this.log(`[PUSH] 连接到: ${url}`);
 
             // 已有连接且是 OPEN，就不用重复连
             if (wsPush && wsPush.readyState === WebSocket.OPEN) {
-                this.log('[PUSH] 已处于连接状态');
+                // this.log('[PUSH] 已处于连接状态');
                 return;
             }
 
             wsPush = new WebSocket(url);
 
             wsPush.onopen = () => {
-                this.log('✅ 推送WS 已连接');
+                // this.log('✅ 推送WS 已连接');
 
                 // 把排队的消息发出去
                 if (pushQueue.length && wsPush) {
@@ -1236,7 +1247,7 @@ export const useViaWsStore = defineStore('viaWs', {
             };
 
             wsPush.onerror = () => {
-                this.log('❌ 推送WS 连接错误');
+                // this.log('❌ 推送WS 连接错误');
             };
         },
 
@@ -1244,7 +1255,7 @@ export const useViaWsStore = defineStore('viaWs', {
         /** 开始每 50ms 推送一次 lobbyRooms 给后端 */
         startLobbyPush() {
             if (this.pushRunning) {
-                this.log('[PUSH] lobbyRooms 推送已在运行中，忽略重复 start');
+                // this.log('[PUSH] lobbyRooms 推送已在运行中，忽略重复 start');
                 return;
             }
 
@@ -1254,56 +1265,47 @@ export const useViaWsStore = defineStore('viaWs', {
 
             const viaAuth = useViaAuthStore();
 
-            this.log('[PUSH] 开始每 50ms 推送 lobbyRooms');
+            // this.log('[PUSH] 开始每 50ms 推送 lobbyRooms');
 
             lobbyPushTimer = window.setInterval(() => {
-                const rooms = viaAuth.lobbyRooms;
+                const rooms = Object.values(viaAuth.lobbyRoomById || {});
+                if (!rooms.length) return;
 
-                if (!rooms || !rooms.length) return;
+                const lightRooms = rooms
+                    .filter((r: any) => r && r.tableStatus === 1)
+                    .map((r: any) => ({
+                        tableId: r.tableId,
+                        gameCode: r.gameCode,
+                        gameShoe: r.gameShoe,
+                        gameRound: r.gameRound,
+                        dealerNickname: r.dealerNickname,
+                        dealerEventType: r.dealerEventType,
+                        tableStatus: r.tableStatus,
+                        shuffle: r.shuffle,
+                        iTime: r.iTime,
+                        totalBetAmount: r.totalBetAmount,
+                        betPlayers: r.betPlayers,
+                        winnerCounter: r.winnerCounter,
+                        mainRoads: Array.isArray(r.mainRoads) ? r.mainRoads : [],
 
-                // 🔥 按照当前 UI + 下注需求，打一个“精简但够用”的房间快照
-                const lightRooms = rooms.map((r) => ({
-                    // —— 原来就有的字段（展示用） ——
-                    tableId: r.tableId,
-                    gameCode: r.gameCode,
-                    gameShoe: r.gameShoe,
-                    gameRound: r.gameRound,
-                    dealerNickname: r.dealerNickname,
-                    dealerEventType: r.dealerEventType,
-                    tableStatus: r.tableStatus,
-                    shuffle: r.shuffle,
-                    iTime: r.iTime,
-                    totalBetAmount: r.totalBetAmount,
-                    betPlayers: r.betPlayers,
-                    winnerCounter: r.winnerCounter,
-                    mainRoads: Array.isArray(r.mainRoads) ? r.mainRoads : [],
+                        drawId: r.drawId,
+                        roundStartTime: r.roundStartTime,
+                        dealerId: r.dealerId,
 
-                    // 下注时需要的当前局信息
-                    drawId: r.drawId,                 // 本局唯一 ID
-                    roundStartTime: r.roundStartTime, // 本局开始时间（毫秒时间戳）
-                    dealerId: r.dealerId,             // hostId
+                        deliverTime: r.deliverTime,
+                        roundStartTimeOriginal: r.roundStartTimeOriginal,
+                        roundEndTime: r.roundEndTime,
+                        serverTime: r.serverTime,
 
-                    // ✅ 新增时间字段
-                    deliverTime: r.deliverTime,        // 2025-11-25 10:54:36
-                    roundStartTimeOriginal: r.roundStartTimeOriginal, // 2025-11-25 10:54:01
-                    roundEndTime: r.roundEndTime,        // 2025-11-25 10:54:19
-                    serverTime: r.serverTime
-                }));
+                        tableCards: r.tableCards,
+                        tableCardStampTimes: r.tableCardStampTimes,
 
-                const payload = {
-                    type: 'viaGameTableInfos',
-                    data: lightRooms,
-                };
+                    }));
+                const msg = JSON.stringify({ type: 'viaGameTableInfos', data: lightRooms });
 
-                const msg = JSON.stringify(payload);
-
-                if (wsPush && wsPush.readyState === WebSocket.OPEN) {
-                    wsPush.send(msg);
-                } else {
-                    // 连接还没好，先排队（等 onopen 的时候统一发）
-                    pushQueue.push(msg);
-                }
-            }, 500); // 👈 每 50ms 一次
+                if (wsPush && wsPush.readyState === WebSocket.OPEN) wsPush.send(msg);
+                else pushQueue = [msg];
+            }, 500);
         },
 
 

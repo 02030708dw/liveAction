@@ -66,6 +66,10 @@ export interface ViaLobbyRoom {
     roundEndTime?: number;
     roundStartTimeOriginal?: number;
     serverTime?: number;
+
+    //牌信息
+    tableCards?: number[];
+    tableCardStampTimes?: number[];
 }
 
 /** 运行时允许被 WS 更新的字段（主键不允许改） */
