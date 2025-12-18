@@ -628,6 +628,11 @@ export interface UiDealerEvent {
 	// 新增，给 AIA 用的原始倒计时参数
 	countdownBase?: number;       // 下注总秒数
 	countdownLastUpdate?: number; // 当时的本地时间戳(ms)
+
+	//牌数据
+	poker: string;
+	//桌子状态
+	state: string;
 }
 
 export interface UiRoadInfo {
@@ -672,7 +677,7 @@ export function buildUiTableData(
 	const state1002 = ps.tableStateById[tableId] || {};
 	const roads1004 = ps.roadsByTableId[tableId] || summary.roads || {};
 	const bet208 = ps.betAreaByTableId[tableId] || {};
-
+	const poker1002 = ps.openCardByTableId[tableId] || {};
 	const betInfo: UiBetInfo = {
 		betCount: bet208.betCount || summary.onlineCount || 0,
 		currentBet: bet208.totalAmount || summary.totalAmount || 0,
@@ -731,6 +736,9 @@ export function buildUiTableData(
 		// 新增，给 AIA 用的原始倒计时参数
 		countdownBase: cdInfo?.base || 0,
 		countdownLastUpdate: cdInfo?.lastUpdate || 0,
+		//牌数据
+		poker: poker1002.poker || '',
+		state: state1002.state || 1,
 	};
 
 	const roadInfo: UiRoadInfo = {

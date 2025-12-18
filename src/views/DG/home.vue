@@ -75,7 +75,7 @@
 
       <div class="flex flex-wrap items-center gap-2">
         <label class="text-sm text-slate-300">bundle.js</label>
-        <input v-model="bundleUrl"
+        <input v-model="authStore.bundleUrl"
           class="flex-1 min-w-[220px] px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
         <button @click="onWsKey"
           class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white">
@@ -186,9 +186,7 @@ const eg_provider = ref('cq9');
 const eg_live = ref('true');
 const eg_html = ref('true');
 
-const bundleUrl = ref(
-  'https://new-dd-cn.20299999.com/ddnewpc/V3.1.7/js/bundle.js',
-);
+
 
 const loginOut = computed(() =>
   authStore.loginResp
@@ -236,7 +234,7 @@ const onEnter = async () => {
 
 const onWsKey = async () => {
   try {
-    await authStore.fetchWsKey(bundleUrl.value.trim());
+    await authStore.fetchWsKey();
     wsStore.wskey = authStore.wskey;
   } catch (e: any) {
     alert(e.message || e);
@@ -265,9 +263,11 @@ const runAutoFlow = async () => {
       live: eg_live.value === 'true',
       html: eg_html.value === 'true',
     });
+    // ③ 获取版本号（在 fetchWsKey 之前）
+    await authStore.fetchGameVersion();
 
-    // ③ 获取 wskey
-    await authStore.fetchWsKey(bundleUrl.value.trim());
+    // ④ 获取 wskey
+    await authStore.fetchWsKey();
 
     // 用最新的 auth 信息初始化 WS 配置
     wsStore.initFromAuth();

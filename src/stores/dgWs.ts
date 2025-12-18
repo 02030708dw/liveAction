@@ -486,6 +486,18 @@ export const useDgWsStore = defineStore('dgWs', {
             const cmd = mapped.cmd | 0;
             const tableId = (mapped as any).tableId || (mapped as any).tableID || 0;
 
+            // if (cmd === 1002) {
+            //     const TARGET_TABLE_ID = 20102; // 只看这张桌子，改成你想看的 tableId
+
+            //     const list = Array.isArray((mapped as any).table) ? (mapped as any).table : [];
+            //     const one = list.find((t: any) => Number(t.tableId ?? t.tableID) === TARGET_TABLE_ID);
+
+            //     if (one) {
+            //         this.log(`mapped(one)=${JSON.stringify(one)}`);
+            //         console.log(`mapped(one)=`, one);
+            //     }
+            //     return;
+            // }
             switch (cmd) {
                 case 10086: {
                     this.pushState.list = Array.isArray(mapped.list) ? mapped.list : [];
@@ -523,36 +535,53 @@ export const useDgWsStore = defineStore('dgWs', {
                 }
 
                 case 1002: {
-                    if (Array.isArray(mapped.table)) {
-                        for (const t of mapped.table) {
-                            const tid = Number(t.tableId || t.tableID);
-                            if (!tid) continue;
+                    if (!Array.isArray(mapped.table)) break;
 
-                            this.pushState.tableStateById[tid] = t;
+                    for (const t of mapped.table) {
+                        const tid = Number(t.tableId || t.tableID);
+                        if (!tid) continue;
 
-                            if (t.gameNo) {
-                                const rt = (this.dgRuntimeByTableId[tid] ??= {});
-                                rt.gameNo = t.gameNo;
-                            }
+                        // 基础状态更新（始终更新）
+                        this.pushState.tableStateById[tid] = t;
 
-                            if (t.state === 1 && typeof t.countDown === 'number') {
-                                this.pushState.countdownByTableId[tid] = {
-                                    base: t.countDown,
-                                    lastUpdate: Date.now(),
-                                    active: true,
-                                };
-                            } else {
-                                this.pushState.countdownByTableId[tid] = {
-                                    base: 0,
-                                    lastUpdate: Date.now(),
-                                    active: false,
-                                };
-                            }
+                        // runtime
+                        const rt = (this.dgRuntimeByTableId[tid] ??= {});
+                        if (t.gameNo) rt.gameNo = t.gameNo;
+
+                        // 倒计时（保留你原来的）
+                        if (t.state === 1 && typeof t.countDown === 'number') {
+                            this.pushState.countdownByTableId[tid] = {
+                                base: t.countDown,
+                                lastUpdate: Date.now(),
+                                active: true,
+                            };
+                        } else {
+                            this.pushState.countdownByTableId[tid] = {
+                                base: 0,
+                                lastUpdate: Date.now(),
+                                active: false,
+                            };
                         }
-                        this.schedulePush();
+
+                        /**
+                         * ✅ 只保留每张桌子最新 poker
+                         * 1 = 新局开始：不更新 poker（不清空不覆盖）
+                         * 2 / 5：有 poker 才更新（覆盖旧值，不增长内存）
+                         */
+                        if ((t.state === 2 || t.state === 5) && t.poker) {
+                            this.pushState.openCardByTableId[tid] = {
+                                poker: t.poker,
+                                state: t.state,
+                                updateAt: Date.now(),
+                                gameNo: t.gameNo || rt.gameNo || '',
+                            };
+                        }
                     }
+
+                    this.schedulePush();
                     break;
                 }
+
 
                 case 1004:
                     this.handleLobbyPush1004(mapped);
