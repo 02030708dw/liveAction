@@ -220,9 +220,9 @@ export const useWmWsStore = defineStore("wmWs", {
                 );
                 if (filtered.length === 0) return;
 
-                const payload = { type: "wmGameTableInfos", data: filtered};
-                try { 
-                    this.phpClientSocket.send(JSON.stringify(payload)); 
+                const payload = { type: "wmGameTableInfos", data: filtered };
+                try {
+                    this.phpClientSocket.send(JSON.stringify(payload));
                 } catch (err) {
                     console.error("推送过滤后的 game101GroupInfo 失败:", err);
                 }
@@ -447,10 +447,21 @@ export const useWmWsStore = defineStore("wmWs", {
                 case 20: {
                     const d = msg.data as { gameID: number; groupID: number; gameStage: number };
                     if (d.gameID !== 101) return;
+
                     const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
-                    
                     if (!target) return;
+
                     target.gameStage = d.gameStage;
+
+                    // 确保每桌都有 poker 缓存
+                    const p = ((target as any).poker ??= { cards: "0-0-0-0-0-0", gameStage: 1 });
+                    p.gameStage = d.gameStage;
+
+                    // gameStage=2 重新开始推牌，重置牌
+                    if (d.gameStage === 2) {
+                        p.cards = "0-0-0-0-0-0";
+                    }
+
                     break;
                 }
 
@@ -504,6 +515,33 @@ export const useWmWsStore = defineStore("wmWs", {
                 }
 
                 case 24: {
+                    const d = msg.data as {
+                        gameID: number;
+                        groupID: number;
+                        cardArea: number; // 位置
+                        cardID: number;   // 值
+                        inputType?: number;
+                    };
+                    if (d.gameID !== 101) return;
+
+                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    if (!target) return;
+
+                    // 确保 poker 存在
+                    const p = ((target as any).poker ??= { cards: "0-0-0-0-0-0", gameStage: target.gameStage ?? 1 });
+
+                    // poker 的 gameStage 永远保持最新
+                    p.gameStage = target.gameStage ?? p.gameStage;
+
+                    // 写入对应位置（cardArea 期望 1~6）
+                    const pos = Number(d.cardArea);
+                    if (pos >= 1 && pos <= 6) {
+                        const arr = String(p.cards || "0-0-0-0-0-0").split("-");
+                        while (arr.length < 6) arr.push("0");
+                        arr[pos - 1] = String(d.cardID ?? 0);
+                        p.cards = arr.slice(0, 6).join("-");
+                    }
+
                     break;
                 }
 
@@ -513,7 +551,6 @@ export const useWmWsStore = defineStore("wmWs", {
                     const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
                     if (!target) return;
                     if (target.gameStage !== 3) target.gameStage = 3;
-                    target.tableStatus = target.tableStatus;
                     break;
                 }
 

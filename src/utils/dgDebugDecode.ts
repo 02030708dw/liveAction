@@ -632,7 +632,7 @@ export interface UiDealerEvent {
 	//牌数据
 	poker: string;
 	//桌子状态
-	state: string;
+	state: number;
 }
 
 export interface UiRoadInfo {
