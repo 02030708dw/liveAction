@@ -228,4 +228,6 @@ export type WmLeanGroup = {
     dealerName?: string;
     dealerImage?: string;
     dtNowBet?: WmDtNowBet;
+
+    cardsArr?: number[];
 };

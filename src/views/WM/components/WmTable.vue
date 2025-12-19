@@ -46,6 +46,7 @@
 
                         <div
                             class="flex-1 bg-slate-950/70 border border-slate-800 rounded-md px-3 py-2 text-xs text-slate-300">
+                            {{ table.cardsArr }}
                             <!-- <div v-if="hasHistory(table)">
                                 共 {{ table.historyArr!.length }} 局，
                                 红 {{ table.historyData?.redCount ?? 0 }} /

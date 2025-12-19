@@ -5,7 +5,6 @@ import type {
     WmDtBetLimitSelectID,
     WmWsMessage,
     WmHallLoginData,
-    WmPhpClientPayload,
     WmHallInit35Data,
     WmGameBalanceData,
     WmLeanGroup,
@@ -37,7 +36,7 @@ function toLeanGroup(raw: any): WmLeanGroup {
         timeMillisecond: raw.timeMillisecond,
         betTimeReceivedAt: raw.betTimeReceivedAt,
 
-        userCount: raw.onlinePeople ?? raw.userCount,
+        userCount: raw.userCount,
 
         historyData: raw.historyData?.resultObjArr
             ? { resultObjArr: raw.historyData.resultObjArr }
@@ -46,6 +45,8 @@ function toLeanGroup(raw: any): WmLeanGroup {
         dealerName: raw.dealerName,
         dealerImage: raw.dealerImage,
         dtNowBet: raw.dtNowBet,
+
+        cardsArr: raw.cardsArr || [0, 0, 0, 0, 0, 0]
     };
 }
 
@@ -80,7 +81,7 @@ export const useWmWsStore = defineStore("wmWs", {
         lastPassword: "" as string,
 
         /** 仅保留后端需要的字段 */
-        game101GroupInfo: [] as WmLeanGroup[],
+        game101GroupInfo: new Map<number, any>() as Map<number, WmLeanGroup & { poker?: any }>,
 
         /** 15101 protocol=30 最新余额数据 */
         balanceData: null as WmGameBalanceData | null,
@@ -91,6 +92,8 @@ export const useWmWsStore = defineStore("wmWs", {
 
         // 开发期静音（HMR 期间不刷新页面）
         hmrSilence: false as boolean,
+
+        phpReconnectTimer: null as number | null, // phpclient 重连定时器
     }),
 
     getters: {
@@ -176,12 +179,19 @@ export const useWmWsStore = defineStore("wmWs", {
 
         /** 连接 phpclient WS：wss://phpclienta.nakiph.xyz/ws/getTableInfos */
         connectPhpClient() {
+            // 已经是 open 就不重复连
             if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) return;
 
+            // 进来就清掉旧的重连定时器，避免叠加
+            if (this.phpReconnectTimer !== null) {
+                window.clearTimeout(this.phpReconnectTimer);
+                this.phpReconnectTimer = null;
+            }
+
+            // 如果之前还有 socket，先关掉
             if (this.phpClientSocket) {
-                try {
-                    this.phpClientSocket.close();
-                } catch { }
+                try { this.phpClientSocket.close(); } catch { }
+                this.phpClientSocket = null;
             }
 
             const ws = new WebSocket("wss://phpclienta.nakiph.xyz/ws/getTableInfos");
@@ -189,6 +199,13 @@ export const useWmWsStore = defineStore("wmWs", {
 
             ws.onopen = () => {
                 console.log("phpclient WS 已连接");
+
+                // 连接成功后，清理重连 timer
+                if (this.phpReconnectTimer !== null) {
+                    window.clearTimeout(this.phpReconnectTimer);
+                    this.phpReconnectTimer = null;
+                }
+
                 this.startPhpPushLoop();
             };
 
@@ -199,7 +216,19 @@ export const useWmWsStore = defineStore("wmWs", {
             ws.onclose = () => {
                 console.log("phpclient WS 已关闭");
                 this.stopPhpPushLoop();
-                // phpclient 暂时不做刷新 / 重连
+
+                // ✅ 5s 后重连（避免重复创建）
+                if (this.phpReconnectTimer !== null) {
+                    window.clearTimeout(this.phpReconnectTimer);
+                }
+                this.phpReconnectTimer = window.setTimeout(() => {
+                    this.phpReconnectTimer = null;
+
+                    // 只有当前仍然是断开状态才重连（防止期间你手动 disposeAll 又触发）
+                    if (!this.phpClientSocket || this.phpClientSocket.readyState === WebSocket.CLOSED) {
+                        this.connectPhpClient();
+                    }
+                }, 5000) as unknown as number;
             };
         },
 
@@ -211,24 +240,23 @@ export const useWmWsStore = defineStore("wmWs", {
             }
 
             this.phpPushTimer = window.setInterval(() => {
-                if (!this.phpClientSocket || this.phpClientSocket.readyState !== WebSocket.OPEN) return;
-                if (!this.game101GroupInfo || this.game101GroupInfo.length === 0) return;
+                const ws = this.phpClientSocket;
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                if (!this.game101GroupInfo || this.game101GroupInfo.size === 0) return;
 
-                // ✅ 只推 tableStatus === 1 的桌子
-                const filtered = this.game101GroupInfo.filter(
-                    g => (g.tableStatus) === 1
-                );
-                if (filtered.length === 0) return;
+                const data: any[] = [];
+                for (const g of this.game101GroupInfo.values()) {
+                    if ((g.tableStatus as any) === 1) data.push(g);
+                }
+                if (data.length === 0) return;
 
-                const payload = { type: "wmGameTableInfos", data: filtered };
                 try {
-                    this.phpClientSocket.send(JSON.stringify(payload));
+                    ws.send(JSON.stringify({ type: "wmGameTableInfos", data }));
                 } catch (err) {
-                    console.error("推送过滤后的 game101GroupInfo 失败:", err);
+                    console.error("推送失败:", err);
                 }
             }, 500) as unknown as number;
         },
-
         /** 停止推送 */
         stopPhpPushLoop() {
             if (this.phpPushTimer !== null) {
@@ -303,29 +331,32 @@ export const useWmWsStore = defineStore("wmWs", {
                     } else if (msg.protocol === 35) {
                         const data = msg.data as WmHallInit35Data;
 
-                        // 只取 101，并投影成精简结构
                         const game101 = data.gameArr?.find((g) => g.gameID === 101);
+                        const next = new Map<number, any>();
+
                         if (game101 && Array.isArray(game101.groupArr)) {
-                            this.game101GroupInfo = game101.groupArr.map((g: any) => {
-                                const lean = toLeanGroup(g);
-                                return {
+                            for (const raw of game101.groupArr) {
+                                const lean = toLeanGroup(raw);
+                                next.set(lean.groupID, {
                                     ...lean,
                                     betTimeReceivedAt: Date.now(),
-                                    userCount: g.onlinePeople ?? lean.userCount,
-                                };
-                            });
-                        } else {
-                            this.game101GroupInfo = [];
+                                    userCount: lean.userCount,
+                                    // 初始化 poker（可选）
+                                    cardsArr: [0, 0, 0, 0, 0, 0],
+                                });
+                            }
                         }
 
-                        // 首包也推一次（精简后的数组）
+                        this.game101GroupInfo = next;
+
+                        // 首包也推一次
                         if (this.phpClientSocket && this.phpClientSocket.readyState === WebSocket.OPEN) {
-                            const filtered = this.game101GroupInfo.filter(
-                                g => (g.tableStatus) === 1
-                            );
-                            if (filtered.length) {
-                                const payload: WmPhpClientPayload = { type: "wmGameTableInfos", data: filtered };
-                                try { this.phpClientSocket.send(JSON.stringify(payload)); } catch { }
+                            const arr: any[] = [];
+                            for (const g of this.game101GroupInfo.values()) {
+                                if ((g.tableStatus as any) === 1) arr.push(g);
+                            }
+                            if (arr.length) {
+                                try { this.phpClientSocket.send(JSON.stringify({ type: "wmGameTableInfos", data: arr })); } catch { }
                             }
                         }
                     } else {
@@ -448,69 +479,48 @@ export const useWmWsStore = defineStore("wmWs", {
                     const d = msg.data as { gameID: number; groupID: number; gameStage: number };
                     if (d.gameID !== 101) return;
 
-                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
 
                     target.gameStage = d.gameStage;
 
-                    // 确保每桌都有 poker 缓存
-                    const p = ((target as any).poker ??= { cards: "0-0-0-0-0-0", gameStage: 1 });
-                    p.gameStage = d.gameStage;
-
-                    // gameStage=2 重新开始推牌，重置牌
+                    // gameStage=2：新一局开始，清牌
                     if (d.gameStage === 2) {
-                        p.cards = "0-0-0-0-0-0";
+                        target.cardsArr = [0, 0, 0, 0, 0, 0];
                     }
-
                     break;
                 }
 
                 case 21: {
                     const d = msg.data as any;
                     if (d.gameID !== 101) return;
-                    if (!this.game101GroupInfo?.length) return;
 
-                    const idx = this.game101GroupInfo.findIndex((g) => g.groupID === d.groupID);
-                    if (idx === -1) return;
+                    const oldItem = this.game101GroupInfo.get(d.groupID);
+                    if (!oldItem) return;
 
-                    const oldItem = this.game101GroupInfo[idx]!;
                     const lean = toLeanGroup(d);
 
-                    const newItem: WmLeanGroup = {
-                        ...oldItem,
+                    // 关键：不要新建对象/不要 splice，直接就地更新（更省响应式开销）
+                    oldItem.tableStatus = lean.tableStatus ?? oldItem.tableStatus;
+                    oldItem.tableDtExtend = lean.tableDtExtend ?? oldItem.tableDtExtend;
 
-                        groupID: oldItem.groupID,
-                        tableStatus: lean.tableStatus ?? oldItem.tableStatus,
-                        // gameStage: 1,
+                    oldItem.gameNo = lean.gameNo;
+                    oldItem.gameNoRound = lean.gameNoRound;
 
-                        tableDtExtend: lean.tableDtExtend ?? oldItem.tableDtExtend,
+                    oldItem.dealerID = lean.dealerID ?? oldItem.dealerID;
 
-                        gameNo: lean.gameNo,
-                        gameNoRound: lean.gameNoRound,
+                    oldItem.betTimeCount = undefined;
+                    oldItem.betTimeContent = undefined;
+                    oldItem.timeMillisecond = undefined;
+                    oldItem.betTimeReceivedAt = Date.now();
 
-                        dealerID: lean.dealerID ?? oldItem.dealerID,
+                    oldItem.userCount = lean.userCount ?? oldItem.userCount;
 
-                        // 清倒计时，由 38 再覆盖
-                        betTimeCount: undefined,
-                        betTimeContent: undefined,
-                        timeMillisecond: undefined,
-                        betTimeReceivedAt: Date.now(),
+                    oldItem.dealerName = lean.dealerName ?? oldItem.dealerName;
+                    oldItem.dealerImage = lean.dealerImage ?? oldItem.dealerImage;
+                    oldItem.dtNowBet = lean.dtNowBet ?? oldItem.dtNowBet;
 
-                        userCount: lean.userCount ?? oldItem.userCount,
-
-                        historyData: oldItem.historyData,
-
-                        dealerName: lean.dealerName ?? oldItem.dealerName,
-                        dealerImage: lean.dealerImage ?? oldItem.dealerImage,
-                        dtNowBet: lean.dtNowBet ?? oldItem.dtNowBet,
-                    };
-
-                    this.game101GroupInfo.splice(idx, 1, newItem);
-                    break;
-                }
-
-                case 23: {
-                    console.log("protocol=23 下注返回:", msg.data);
+                    // poker 保留，不动
                     break;
                 }
 
@@ -518,37 +528,31 @@ export const useWmWsStore = defineStore("wmWs", {
                     const d = msg.data as {
                         gameID: number;
                         groupID: number;
-                        cardArea: number; // 位置
-                        cardID: number;   // 值
-                        inputType?: number;
+                        cardArea: number;
+                        cardID: number;
                     };
                     if (d.gameID !== 101) return;
 
-                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
 
-                    // 确保 poker 存在
-                    const p = ((target as any).poker ??= { cards: "0-0-0-0-0-0", gameStage: target.gameStage ?? 1 });
-
-                    // poker 的 gameStage 永远保持最新
-                    p.gameStage = target.gameStage ?? p.gameStage;
-
-                    // 写入对应位置（cardArea 期望 1~6）
-                    const pos = Number(d.cardArea);
-                    if (pos >= 1 && pos <= 6) {
-                        const arr = String(p.cards || "0-0-0-0-0-0").split("-");
-                        while (arr.length < 6) arr.push("0");
-                        arr[pos - 1] = String(d.cardID ?? 0);
-                        p.cards = arr.slice(0, 6).join("-");
+                    if (!target.cardsArr || target.cardsArr.length !== 6) {
+                        target.cardsArr = [0, 0, 0, 0, 0, 0];
                     }
 
+                    const pos = (d.cardArea | 0) - 1; // 0..5
+                    if (pos < 0 || pos > 5) return;
+
+                    target.cardsArr[pos] = d.cardID | 0;
                     break;
                 }
+
+
 
                 case 25: {
                     const d = msg.data as { gameID: number; groupID: number };
                     if (d.gameID !== 101) return;
-                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
                     if (target.gameStage !== 3) target.gameStage = 3;
                     break;
@@ -562,7 +566,7 @@ export const useWmWsStore = defineStore("wmWs", {
                         historyData: any;
                     };
                     if (d.gameID !== 101) return;
-                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
                     const resultObjArr = d.historyData?.resultObjArr ?? [];
                     target.historyData = { resultObjArr };
@@ -582,7 +586,7 @@ export const useWmWsStore = defineStore("wmWs", {
                     };
 
                     if (d.gameID !== 101) return;
-                    const target = this.game101GroupInfo.find(g => g.groupID === d.groupID);
+                    const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
                     target.dtNowBet = d.dtNowBet;
                     break;
@@ -597,7 +601,7 @@ export const useWmWsStore = defineStore("wmWs", {
                         timeMillisecond: number;
                     };
                     if (d.gameID !== 101) return;
-                    const target = this.game101GroupInfo.find((g) => g.groupID === d.groupID);
+                    const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
                     target.betTimeCount = d.betTimeCount;
                     target.betTimeContent = d.betTimeContent;
@@ -628,6 +632,11 @@ export const useWmWsStore = defineStore("wmWs", {
             this.clientSocket?.close();
             this.gameSocket?.close();
             this.phpClientSocket?.close();
+
+            if (this.phpReconnectTimer !== null) {
+                window.clearTimeout(this.phpReconnectTimer);
+                this.phpReconnectTimer = null;
+            }
 
             if (this.hallHeartbeatTimer !== null) {
                 window.clearInterval(this.hallHeartbeatTimer);

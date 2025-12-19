@@ -75,7 +75,9 @@ const {
 const username = ref('member22');
 const password = ref('a123456');
 
-const tables = computed(() => game101GroupInfo.value.filter(v => v.tableStatus === 1) ?? []);
+const tables = computed(() =>
+  Array.from(game101GroupInfo.value.values()).filter(t => (t.tableStatus ?? 0) === 1)
+);
 
 /** HTTP 登录（手动按钮用，可选） */
 const onLogin = async () => {
