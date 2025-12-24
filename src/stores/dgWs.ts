@@ -25,6 +25,8 @@ import {
     PublicBean,
     buildUiTableData,
     extractUserNameFromMapped,
+    isMeaningfulPoker,
+    extractPokerNums
 } from '@/utils/dgDebugDecode';
 import { useAuthStore } from './dgAuth';
 
@@ -486,18 +488,17 @@ export const useDgWsStore = defineStore('dgWs', {
             const cmd = mapped.cmd | 0;
             const tableId = (mapped as any).tableId || (mapped as any).tableID || 0;
 
-            // if (cmd === 1002) {
-            //     const TARGET_TABLE_ID = 20102; // 只看这张桌子，改成你想看的 tableId
+            if (cmd === 1002) {
+                const TARGET_TABLE_ID = 20102; // 只看这张桌子，改成你想看的 tableId
 
-            //     const list = Array.isArray((mapped as any).table) ? (mapped as any).table : [];
-            //     const one = list.find((t: any) => Number(t.tableId ?? t.tableID) === TARGET_TABLE_ID);
+                const list = Array.isArray((mapped as any).table) ? (mapped as any).table : [];
+                const one = list.find((t: any) => Number(t.tableId ?? t.tableID) === TARGET_TABLE_ID);
 
-            //     if (one) {
-            //         this.log(`mapped(one)=${JSON.stringify(one)}`);
-            //         console.log(`mapped(one)=`, one);
-            //     }
-            //     return;
-            // }
+                if (one) {
+                    this.log(`mapped(one)=${JSON.stringify(one)}`);
+                    console.log(`mapped(one)=`, one);
+                }
+            }
             switch (cmd) {
                 case 10086: {
                     this.pushState.list = Array.isArray(mapped.list) ? mapped.list : [];
@@ -563,19 +564,26 @@ export const useDgWsStore = defineStore('dgWs', {
                             };
                         }
 
-                        /**
-                         * ✅ 只保留每张桌子最新 poker
-                         * 1 = 新局开始：不更新 poker（不清空不覆盖）
-                         * 2 / 5：有 poker 才更新（覆盖旧值，不增长内存）
-                         */
-                        if ((t.state === 2 || t.state === 5) && t.poker) {
-                            this.pushState.openCardByTableId[tid] = {
-                                poker: t.poker,
-                                state: t.state,
-                                updateAt: Date.now(),
-                                gameNo: t.gameNo || rt.gameNo || '',
-                            };
+                        // ✅ openCard：单对象、不会涨内存、可区分 poker 属于哪局
+                        const prev = (this.pushState.openCardByTableId[tid] ?? {}) as any;
+
+                        // 每次都更新“当前桌子的状态/局号”，这样前端不会用旧 state
+                        const next: any = {
+                            ...prev,
+                            state: t.state,
+                            gameNo: t.gameNo || rt.gameNo || prev.gameNo || '',
+                            updateAt: Date.now(),
+                        };
+
+                        // poker 只有在“有效”时才更新，并记录 pokerGameNo
+                        // ✅ state=2 的 {"0-0-0"} 会被判定无效 -> 不会覆盖旧 pokerGameNo
+                        if (t.poker && isMeaningfulPoker(t.poker)) {
+                            next.poker = t.poker;
+                            next.pokerGameNo = next.gameNo; // poker 属于当前 gameNo
                         }
+
+                        this.pushState.openCardByTableId[tid] = next;
+
                     }
 
                     this.schedulePush();

@@ -26,6 +26,7 @@ export interface PublicMapped {
 	table: any[];
 	room?: any;
 	anchor?: any;
+	poker?: any;
 }
 
 export class Reader {
@@ -633,6 +634,8 @@ export interface UiDealerEvent {
 	poker: string;
 	//桌子状态
 	state: number;
+	gameNo: string;
+	pokerGameNo: string;
 }
 
 export interface UiRoadInfo {
@@ -718,6 +721,8 @@ export function buildUiTableData(
 	const dealerEvent: UiDealerEvent = {
 		dealerId: tableInfo.dealerID,
 		deliverTime: cdInfo?.lastUpdate || Date.now(),
+		gameNo: poker1002.gameNo,
+		pokerGameNo: poker1002.pokerGameNo,
 		eventType:
 			state1002.state === 1
 				? 'GP_BETTING'
@@ -856,4 +861,38 @@ export function extractUserNameFromMapped(mapped: any): string | null {
 	if (fromDataObj) return fromDataObj;
 
 	return null;
+}
+
+
+export function extractPokerNums(poker: any): number[] {
+	if (!poker) return [];
+	try {
+		const obj = typeof poker === 'string' ? JSON.parse(poker) : poker;
+
+		const toNums = (v: any): number[] => {
+			if (!v) return [];
+			if (Array.isArray(v)) return v.map(Number).filter(Number.isFinite);
+			const s = String(v);
+			return s
+				.split(/[-,]/)
+				.filter(Boolean)
+				.map(Number)
+				.filter(Number.isFinite);
+		};
+
+		const banker = toNums(obj?.banker);
+		const player = toNums(obj?.player);
+		return [...player, ...banker];
+	} catch {
+		// 兜底：抓所有数字
+		const s = String(poker);
+		const m = s.match(/\d+/g);
+		return (m ?? []).map(Number).filter(Number.isFinite);
+	}
+}
+
+export function isMeaningfulPoker(poker: any): boolean {
+	const nums = extractPokerNums(poker);
+	// 只要有一张 >0 就算有效（第三张可能为 0）
+	return nums.some((n) => n > 0 && n !== 255);
 }
