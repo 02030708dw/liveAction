@@ -383,7 +383,7 @@ export const useViaAuthStore = defineStore('viaAuth', {
                     const data = await apiGetVideoStream({
                         authToken: this.loginData.token,
                         type: 'DEALER',
-                        id: '851',
+                        id: '851,852',
                         line: 'https://p01.bnn1ko.co',
                         pixel: 480,
                         roomType: 'DEALER',
@@ -710,6 +710,8 @@ export const useViaAuthStore = defineStore('viaAuth', {
                         // 牌信息
                         tableCards: t.tableCards,
                         tableCardStampTimes: t.tableCardStampTimes,
+
+                        liveURL: t.liveURL,
                     };
 
                     rooms.push(room);

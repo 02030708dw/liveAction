@@ -612,6 +612,7 @@ export interface UiTableInfo {
 	supportWeb: number;
 	newGame: number;
 	roads: string[];
+	liveURL: string;
 }
 
 export interface UiDealerEvent {
@@ -716,6 +717,7 @@ export function buildUiTableData(
 		supportWeb: 1,
 		newGame: 0,
 		roads: roads1004,
+		liveURL: summary.liveURL || '',
 	};
 
 	const dealerEvent: UiDealerEvent = {

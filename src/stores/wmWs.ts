@@ -1,6 +1,8 @@
 // src/stores/wmWs.ts
 import { defineStore } from "pinia";
 import { useAuthStore } from "@/stores/auth";
+import CryptoJS from "crypto-js";
+
 import type {
     WmDtBetLimitSelectID,
     WmWsMessage,
@@ -246,7 +248,12 @@ export const useWmWsStore = defineStore("wmWs", {
 
                 const data: any[] = [];
                 for (const g of this.game101GroupInfo.values()) {
-                    if ((g.tableStatus as any) === 1) data.push(g);
+                    if ((g.tableStatus as any) === 1) {
+                        data.push({
+                            ...g,
+                            liveURL: this.getWmLiveSign(Number((g as any).groupID)),
+                        });
+                    }
                 }
                 if (data.length === 0) return;
 
@@ -719,6 +726,16 @@ export const useWmWsStore = defineStore("wmWs", {
                 console.error("[WM] 发送下注失败:", e);
             }
         },
+        getWmLiveSign(groupID: number) {
+            const d = "kx-stream.nzewy.cn"; // 文档里的域名
+            const k = (Math.floor(Date.now() / 1e3) + 86400).toString(16); // txTime
+
+            // 文档公式：md5(token + d.match(...)[1] + k)；你说 sid 就是 token
+            const domainKey = d.match(/([^/.]+)[^/]*$/)?.[1] ?? "";
+            const txSecret = CryptoJS.MD5(String(this.sid) + domainKey + k).toString();
+
+            return `webrtc://${d}/live${groupID}/720p?txSecret=${txSecret}&txTime=${k}`;
+        }
     },
 });
 

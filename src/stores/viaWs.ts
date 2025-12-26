@@ -9,7 +9,7 @@ import type {
     ViaOpenResult,
     ViaMessageEnvelope,
 } from '@/types/via/ws';
-import { apiLogin } from '@/api/via'
+import { apiLogin, apiGetVideoStream, } from '@/api/via'
 // No.1 ~ No.16 各请求说明
 const NO_TITLES: Record<number, string> = {
     1: '登录连接',
@@ -30,6 +30,9 @@ const NO_TITLES: Record<number, string> = {
 };
 const MAX_LOGS = 200;                 // 日志最多保留多少条
 const ENABLE_VERBOSE_MESSAGE_LOG = false; // 控制是否打印每条 MESSAGE 的详细日志
+// 直播流地址轮询（5s）
+let liveUrlTimer: number | null = null;
+let liveUrlFetching = false;
 interface ViaWsState {
     // 原始 WebSocket
     ws: WebSocket | null;
@@ -1261,6 +1264,8 @@ export const useViaWsStore = defineStore('viaWs', {
 
             // 先确保推送 WS 在尝试连接
             this.connectPushWS();
+            // ✅ 同时启动直播地址轮询
+            this.startLiveUrlPolling();
             this.pushRunning = true;
 
             const viaAuth = useViaAuthStore();
@@ -1299,7 +1304,7 @@ export const useViaWsStore = defineStore('viaWs', {
 
                         tableCards: r.tableCards,
                         tableCardStampTimes: r.tableCardStampTimes,
-
+                        liveURL: r.liveURL, // ✅ 添加直播地址
                     }));
                 const msg = JSON.stringify({ type: 'viaGameTableInfos', data: lightRooms });
 
@@ -1316,7 +1321,8 @@ export const useViaWsStore = defineStore('viaWs', {
                 lobbyPushTimer = null;
                 this.log('[PUSH] 停止 lobbyRooms 定时推送');
             }
-
+            // ✅ 停止直播地址轮询
+            this.stopLiveUrlPolling();
             this.pushRunning = false;
 
             if (pushReconnectTimer != null) {
@@ -1329,6 +1335,71 @@ export const useViaWsStore = defineStore('viaWs', {
                     wsPush.close();
                 } catch { /* ignore */ }
                 wsPush = null;
+            }
+        },
+        /** ================= 直播地址轮询 ================= */
+
+        /** 启动：每 5s 拉一次所有桌的直播地址，并写回 lobbyRoomById 对应项的 liveURL */
+        startLiveUrlPolling() {
+            if (liveUrlTimer != null) return;
+
+            const viaAuth = useViaAuthStore();
+
+            const tick = async () => {
+                if (liveUrlFetching) return;
+
+                const roomById: any = viaAuth.lobbyRoomById || {};
+                // ✅ id 直接用 lobbyRoomById 拼接
+                const EXCLUDE_IDS = new Set(['901', '905']);
+
+                const ids = Object.keys(roomById)
+                    .map(String)
+                    .filter((id) => id && !EXCLUDE_IDS.has(id));
+                if (!ids.length) return;
+
+                const authToken = (viaAuth as any).loginData?.token; // 你 step01Login 的 token
+                if (!authToken) return;
+
+                liveUrlFetching = true;
+                try {
+                    const res: any = await apiGetVideoStream({
+                        authToken,
+                        type: 'DEALER',
+                        id: ids.join(','),
+                        line: 'https://p01.bnn1ko.co',
+                        pixel: 480,
+                        roomType: 'DEALER',
+                    });
+
+                    const urlMap = res?.url;
+
+                    if (urlMap && typeof urlMap === 'object') {
+                        for (const [tableId, arr] of Object.entries(urlMap)) {
+                            const liveURL =
+                                Array.isArray(arr) && typeof (arr as any[])[0] === 'string'
+                                    ? (arr as any[])[0]
+                                    : null;
+
+                            // ✅ 写回 lobbyRoomById 的某一项
+                            viaAuth.updateLobbyRoom(String(tableId), { liveURL });
+                        }
+                    }
+                } catch (err: any) {
+                    this.log(`❌ 获取直播地址失败: ${err?.message || err}`);
+                } finally {
+                    liveUrlFetching = false;
+                }
+            };
+
+            void tick();
+            liveUrlTimer = window.setInterval(() => void tick(), 5000);
+        },
+
+        /** 停止直播地址轮询 */
+        stopLiveUrlPolling() {
+            if (liveUrlTimer != null) {
+                clearInterval(liveUrlTimer);
+                liveUrlTimer = null;
             }
         },
 

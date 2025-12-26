@@ -70,6 +70,8 @@ export interface ViaLobbyRoom {
     //牌信息
     tableCards?: number[];
     tableCardStampTimes?: number[];
+
+    liveURL: string
 }
 
 /** 运行时允许被 WS 更新的字段（主键不允许改） */

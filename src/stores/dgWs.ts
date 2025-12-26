@@ -488,17 +488,17 @@ export const useDgWsStore = defineStore('dgWs', {
             const cmd = mapped.cmd | 0;
             const tableId = (mapped as any).tableId || (mapped as any).tableID || 0;
 
-            if (cmd === 1002) {
-                const TARGET_TABLE_ID = 20102; // 只看这张桌子，改成你想看的 tableId
+            // if (cmd === 1002) {
+            //     const TARGET_TABLE_ID = 20102; // 只看这张桌子，改成你想看的 tableId
 
-                const list = Array.isArray((mapped as any).table) ? (mapped as any).table : [];
-                const one = list.find((t: any) => Number(t.tableId ?? t.tableID) === TARGET_TABLE_ID);
+            //     const list = Array.isArray((mapped as any).table) ? (mapped as any).table : [];
+            //     const one = list.find((t: any) => Number(t.tableId ?? t.tableID) === TARGET_TABLE_ID);
 
-                if (one) {
-                    this.log(`mapped(one)=${JSON.stringify(one)}`);
-                    console.log(`mapped(one)=`, one);
-                }
-            }
+            //     if (one) {
+            //         this.log(`mapped(one)=${JSON.stringify(one)}`);
+            //         console.log(`mapped(one)=`, one);
+            //     }
+            // }
             switch (cmd) {
                 case 10086: {
                     this.pushState.list = Array.isArray(mapped.list) ? mapped.list : [];
@@ -531,6 +531,13 @@ export const useDgWsStore = defineStore('dgWs', {
                 case 43: {
                     this.pushState.table = Array.isArray(mapped.table) ? mapped.table : [];
                     this.dgObjectByTableId = parseDgObjectByTableId(mapped.object);
+
+                    for (const t of mapped.table) {
+                        const tableId = Number((t as any).tableId ?? (t as any).tableID ?? 0);
+                        if (!tableId) continue;
+
+                        this.sendPacket(29, { tableId, type: 1 });
+                    }
                     this.schedulePush();
                     break;
                 }
@@ -661,7 +668,21 @@ export const useDgWsStore = defineStore('dgWs', {
                     }
                     break;
                 }
+                case 29: {
+                    this.log(`🎲 cmd=29 data=${JSON.stringify(mapped)}`);
 
+                    const tableId = Number((mapped as any).tableId ?? (mapped as any).tableID ?? 0);
+                    const liveURL = String((mapped as any).object ?? '');
+
+                    if (tableId && liveURL && Array.isArray(this.pushState.table)) {
+                        const row = this.pushState.table.find(
+                            (t: any) => Number(t.tableId ?? t.tableID) === tableId
+                        );
+                        if (row) row.liveURL = liveURL; // ✅ 写回
+                    }
+
+                    break;
+                }
                 default:
                     break;
             }
