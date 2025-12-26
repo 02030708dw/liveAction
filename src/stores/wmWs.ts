@@ -727,14 +727,13 @@ export const useWmWsStore = defineStore("wmWs", {
             }
         },
         getWmLiveSign(groupID: number) {
-            const d = "kx-stream.nzewy.cn"; // 文档里的域名
-            const k = (Math.floor(Date.now() / 1e3) + 86400).toString(16); // txTime
+            const d = `webrtc://kx-stream.nzewy.cn/live${groupID}/720p`;
+            const k = (Math.floor(Date.now() / 1E3) + 86400).toString(16);
 
-            // 文档公式：md5(token + d.match(...)[1] + k)；你说 sid 就是 token
             const domainKey = d.match(/([^/.]+)[^/]*$/)?.[1] ?? "";
-            const txSecret = CryptoJS.MD5(String(this.sid) + domainKey + k).toString();
+            const txSecret = CryptoJS.MD5(String('38664f4a2cbe118bf86bc234cf0a85b7') + domainKey + k).toString();
 
-            return `webrtc://${d}/live${groupID}/720p?txSecret=${txSecret}&txTime=${k}`;
+            return `${d}?txSecret=${txSecret}&txTime=${k}`;
         }
     },
 });

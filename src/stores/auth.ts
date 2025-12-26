@@ -104,6 +104,7 @@ export const useAuthStore = defineStore('auth', {
             code: string;
             gamerCode: string;
             providerCode: string;
+            isCockfighting?: boolean;
             live: boolean;
             html: boolean;
         }) {
@@ -170,6 +171,7 @@ export const useAuthStore = defineStore('auth', {
                 code: '1',
                 gamerCode: 'WM_PHP',
                 providerCode: 'cq9',
+                isCockfighting: false,
                 live: true,
                 html: false,
             });
