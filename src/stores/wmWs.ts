@@ -96,6 +96,11 @@ export const useWmWsStore = defineStore("wmWs", {
         hmrSilence: false as boolean,
 
         phpReconnectTimer: null as number | null, // phpclient 重连定时器
+
+        debugEnabled: true as boolean,
+        debugLines: [] as string[],
+        debugMaxLines: 300 as number,
+        focusGroupID: 3 as number,   // 0 表示不过滤；>0 表示只看某桌
     }),
 
     getters: {
@@ -103,6 +108,31 @@ export const useWmWsStore = defineStore("wmWs", {
     },
 
     actions: {
+        log(msg: string, groupID: number = 0, payload?: any) {
+            if (!this.debugEnabled) return;
+
+            // ✅ 只看某桌：focusGroupID>0 时，不匹配的直接丢弃
+            if (this.focusGroupID > 0 && groupID > 0 && groupID !== this.focusGroupID) return;
+
+            const ts = new Date().toLocaleTimeString();
+            const gid = groupID > 0 ? ` g=${groupID}` : "";
+            const line =
+                payload === undefined
+                    ? `[${ts}]${gid} ${msg}`
+                    : `[${ts}]${gid} ${msg} ${typeof payload === "string" ? payload : JSON.stringify(payload)}`;
+
+            this.debugLines.push(line);
+
+            const max = this.debugMaxLines || 300;
+            if (this.debugLines.length > max) {
+                this.debugLines.splice(0, this.debugLines.length - max);
+            }
+        },
+
+        clearLog() {
+            this.debugLines = [];
+        },
+
         /** --- 对外：开启自动模式（页面 onMounted 时调用） --- */
         startAutoFlow(username: string, password: string) {
             this.autoMode = true;
@@ -532,12 +562,7 @@ export const useWmWsStore = defineStore("wmWs", {
                 }
 
                 case 24: {
-                    const d = msg.data as {
-                        gameID: number;
-                        groupID: number;
-                        cardArea: number;
-                        cardID: number;
-                    };
+                    const d = msg.data as { gameID: number; groupID: number; cardArea: number; cardID: number };
                     if (d.gameID !== 101) return;
 
                     const target = this.game101GroupInfo.get(d.groupID);
@@ -550,7 +575,17 @@ export const useWmWsStore = defineStore("wmWs", {
                     const pos = (d.cardArea | 0) - 1; // 0..5
                     if (pos < 0 || pos > 5) return;
 
-                    target.cardsArr[pos] = d.cardID | 0;
+                    const old = target.cardsArr[pos]! | 0;
+                    const next = d.cardID | 0;
+                    target.cardsArr[pos] = next;
+
+                    // 只在变更时输出（避免刷屏）
+                    if (old !== next) {
+                        this.log(
+                            `[15101][24] area=${d.cardArea} pos=${pos} cardID=${next} cards=${target.cardsArr.join(",")}`,
+                            d.groupID
+                        );
+                    }
                     break;
                 }
 
@@ -562,6 +597,7 @@ export const useWmWsStore = defineStore("wmWs", {
                     const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
                     if (target.gameStage !== 3) target.gameStage = 3;
+                    this.log(`[15101][25] -> gameStage=3`, d.groupID);
                     break;
                 }
 
@@ -630,7 +666,7 @@ export const useWmWsStore = defineStore("wmWs", {
         handleWsClosed(which: "hall" | "game" | "client") {
             if (this.hmrSilence) return; // HMR 触发的关闭不刷新
             console.log(`[WM] WS closed: ${which}，刷新页面`);
-            window.location.reload();
+            // window.location.reload();
         },
 
         /** 手动关闭所有 WS & 定时器 */
