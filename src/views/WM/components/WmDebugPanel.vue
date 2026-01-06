@@ -55,7 +55,7 @@ import { useWmWsStore } from "@/stores/wmWs";
 const wm = useWmWsStore();
 
 const enabled = ref(true);
-const focusGroupID = ref<number>(wm.joinedGroupID || 0);
+// const focusGroupID = ref<number>(wm.joinedGroupID || 0);
 
 const wsOpen15101 = computed(() => wm.gameSocket?.readyState === WebSocket.OPEN);
 const wsOpen15109 = computed(() => wm.hallSocket?.readyState === WebSocket.OPEN);
