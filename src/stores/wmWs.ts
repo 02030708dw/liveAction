@@ -575,17 +575,17 @@ export const useWmWsStore = defineStore("wmWs", {
                     const pos = (d.cardArea | 0) - 1; // 0..5
                     if (pos < 0 || pos > 5) return;
 
-                    const old = target.cardsArr[pos]! | 0;
+                    // const old = target.cardsArr[pos]! | 0;
                     const next = d.cardID | 0;
                     target.cardsArr[pos] = next;
 
                     // 只在变更时输出（避免刷屏）
-                    if (old !== next) {
-                        this.log(
-                            `[15101][24] area=${d.cardArea} pos=${pos} cardID=${next} cards=${target.cardsArr.join(",")}`,
-                            d.groupID
-                        );
-                    }
+                    // if (old !== next) {
+                    //     this.log(
+                    //         `[15101][24] area=${d.cardArea} pos=${pos} cardID=${next} cards=${target.cardsArr.join(",")}`,
+                    //         d.groupID
+                    //     );
+                    // }
                     break;
                 }
 
@@ -597,7 +597,7 @@ export const useWmWsStore = defineStore("wmWs", {
                     const target = this.game101GroupInfo.get(d.groupID);
                     if (!target) return;
                     if (target.gameStage !== 3) target.gameStage = 3;
-                    this.log(`[15101][25] -> gameStage=3`, d.groupID);
+                    // this.log(`[15101][25] -> gameStage=3`, d.groupID);
                     break;
                 }
 

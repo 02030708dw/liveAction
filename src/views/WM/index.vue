@@ -52,7 +52,7 @@
           class="mt-1 w-full bg-slate-900/70 text-amber-300 text-xs whitespace-pre-wrap rounded border border-slate-800 p-3">{{ dtBetLimitSelectID }}</pre>
       </div>
     </section>
-    <WmDebugPanel />
+    <!-- <WmDebugPanel /> -->
     <!-- 桌子列表 -->
     <WmTables :tables="tables" :balance-data="balanceData" />
   </main>
@@ -63,7 +63,7 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useWmWsStore } from '@/stores/wmWs';
 import WmTables from './components/WmTable.vue';
-import WmDebugPanel from './components/WmDebugPanel.vue';
+// import WmDebugPanel from './components/WmDebugPanel.vue';
 
 const wmWsStore = useWmWsStore();
 const {
@@ -74,7 +74,7 @@ const {
   balanceData,
 } = storeToRefs(wmWsStore);
 
-const username = ref('member12');
+const username = ref('member13');
 const password = ref('a123456');
 
 const tables = computed(() =>
