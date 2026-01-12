@@ -104,7 +104,7 @@ interface ViaWsState {
 }
 // src/stores/viaWs.ts 顶部 import 下面，加上：
 
-const PUSH_WS_URL = 'wss://phpclienta.nakiph.xyz/ws/getTableInfos'; // 后端地址
+const PUSH_WS_URL = 'wss://phpclienta.nakibet.xyz/ws/getTableInfos'; // 后端地址
 
 // 推送给后端的 WS（跟游戏服的 WS 不同一条）
 let wsPush: WebSocket | null = null;

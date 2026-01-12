@@ -226,7 +226,7 @@ export const useWmWsStore = defineStore("wmWs", {
                 this.phpClientSocket = null;
             }
 
-            const ws = new WebSocket("wss://phpclienta.nakiph.xyz/ws/getTableInfos");
+            const ws = new WebSocket("wss://phpclienta.nakibet.xyz/ws/getTableInfos");
             this.phpClientSocket = ws;
 
             ws.onopen = () => {
