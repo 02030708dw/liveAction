@@ -68,7 +68,7 @@ interface State {
 }
 
 /** ================= 推送给后端的 WS 配置 ================= */
-const PUSH_WS_URL = 'wss://phpclienta.nakiph.xyz/ws/getTableInfos';
+const PUSH_WS_URL = 'wss://phpclienta.nakibet.xyz/ws/getTableInfos';
 // const PUSH_WS_URL = 'wss://phpclientd.nakiph.xyz/ws/getTableInfos';
 
 let wsPush: WebSocket | null = null;
