@@ -74,7 +74,7 @@ const {
   balanceData,
 } = storeToRefs(wmWsStore);
 
-const username = ref('member13');
+const username = ref(`member${(15 + 10 * Math.random()).toFixed(0)}`);
 const password = ref('a123456');
 
 const tables = computed(() =>
