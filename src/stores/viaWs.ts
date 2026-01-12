@@ -1386,6 +1386,7 @@ export const useViaWsStore = defineStore('viaWs', {
                     }
                 } catch (err: any) {
                     this.log(`❌ 获取直播地址失败: ${err?.message || err}`);
+                    window.location.reload();
                 } finally {
                     liveUrlFetching = false;
                 }

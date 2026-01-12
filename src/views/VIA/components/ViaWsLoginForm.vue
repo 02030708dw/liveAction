@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 
 import { useViaWsStore } from '@/stores/viaWs';
 // import { useViaAuthStore } from '@/stores/viaAuth';
@@ -46,7 +46,7 @@ import { useViaWsStore } from '@/stores/viaWs';
 const viaWs = useViaWsStore();
 // const viaAuth = useViaAuthStore();
 
-const username = ref('dk0001');
+const username = ref(`member${(15 + 10 * Math.random()).toFixed(0)}`);
 const password = ref('a123456');
 const wsUrl = ref('wss://www.j4r3b77.com/websocket-service/player'); // 你实际的地址
 const loading = ref(false);
@@ -79,7 +79,9 @@ const handleSubmit = async () => {
         loading.value = false;
     }
 };
-
+onMounted(() => {
+    handleSubmit()
+})
 const emit = defineEmits<{
     (e: 'close'): void
     (e: 'success'): void
