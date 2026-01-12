@@ -1,7 +1,7 @@
 // src/stores/auth.ts
 import { defineStore } from 'pinia';
 
-const BASE = 'https://phpclienta.nakiph.xyz';
+const BASE = 'https://phpclientb.nakibet.xyz';
 const LS_AUTH = 'DG_AUTH';
 const LS_GAME_TOKEN = 'DG_GAME_TOKEN';
 

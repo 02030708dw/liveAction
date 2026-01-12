@@ -1,6 +1,6 @@
 import protobuf from 'protobufjs';
 
-export const BASE = 'https://phpclienta.nakiph.xyz';
+export const BASE = 'https://phpclientb.nakibet.xyz';
 export const LS_AUTH = 'nakiph_auth';
 export const LS_WSKEY = 'nakiph_wskey';
 export const LS_GAME_TOKEN = 'nakiph_gameToken';
