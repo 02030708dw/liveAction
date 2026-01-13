@@ -666,7 +666,7 @@ export const useWmWsStore = defineStore("wmWs", {
         handleWsClosed(which: "hall" | "game" | "client") {
             if (this.hmrSilence) return; // HMR 触发的关闭不刷新
             console.log(`[WM] WS closed: ${which}，刷新页面`);
-            // window.location.reload();
+            window.location.reload();
         },
 
         /** 手动关闭所有 WS & 定时器 */
