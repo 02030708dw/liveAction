@@ -161,13 +161,10 @@ export const useAuthStore = defineStore('dgAuth', {
             const bundleUrl = `https://${this.bundleUrl}/ddnewpc/${this.gameVersion}/js/bundle.js`;
             const res = await fetch(bundleUrl);
             const text = await res.text();
+            const regex = /t\.wskey\s*=\s*["']([^"']+)["']\s*\.split\(["']["']\)\.reverse\(\)\.join\(["']["']\)\s*,/;
+            const match = text.match(regex)!;
 
-            const m = text.match(/t\.wskey\s*=\s*"([^"]+)"/);
-            if (!m) throw new Error('未匹配到 t.wskey');
-
-            let wskey = m[1]!;
-
-            wskey = wskey.replace(/\\\\u/g, '\\u');
+            let wskey = match[1]!.split('').reverse().join('');
 
             // ✅ 解码 \uXXXX -> 实际字符
             wskey = wskey.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
@@ -178,6 +175,6 @@ export const useAuthStore = defineStore('dgAuth', {
             this.wskey = wskey;
             this.wskeyResp = wskey;
             return wskey;
-        }
+        },
     },
 });
